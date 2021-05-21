@@ -48,18 +48,32 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
         onVideo(video.artifact);
     }
 
-    for (const page of context.pages())
-      this._dispatchEvent('page', { page: new PageDispatcher(this._scope, page) });
-    context.on(BrowserContext.Events.Page, page => this._dispatchEvent('page', { page: new PageDispatcher(this._scope, page) }));
+    for (const page of context.pages()) {
+      const dispatcher = PageDispatcher.fromPage(this._scope, page);
+      if (dispatcher)
+        this._dispatchEvent('page', { page: dispatcher });
+    }
+    context.on(BrowserContext.Events.Page, page => {
+      const dispatcher = PageDispatcher.fromPage(this._scope, page);
+      if (dispatcher)
+        this._dispatchEvent('page', { page: dispatcher });
+    });
     context.on(BrowserContext.Events.Close, () => {
       this._dispatchEvent('close');
       this._dispose();
     });
 
     if (context._browser.options.name === 'chromium') {
-      for (const page of (context as CRBrowserContext).backgroundPages())
-        this._dispatchEvent('backgroundPage', { page: new PageDispatcher(this._scope, page) });
-      context.on(CRBrowserContext.CREvents.BackgroundPage, page => this._dispatchEvent('backgroundPage', { page: new PageDispatcher(this._scope, page) }));
+      for (const page of (context as CRBrowserContext).backgroundPages()) {
+        const dispatcher = PageDispatcher.fromPage(this._scope, page);
+        if (dispatcher)
+          this._dispatchEvent('backgroundPage', { page: dispatcher });
+      }
+      context.on(CRBrowserContext.CREvents.BackgroundPage, page => {
+        const dispatcher = PageDispatcher.fromPage(this._scope, page);
+        if (dispatcher)
+          this._dispatchEvent('backgroundPage', { page: dispatcher });
+      });
       for (const serviceWorker of (context as CRBrowserContext).serviceWorkers())
         this._dispatchEvent('serviceWorker', { worker: new WorkerDispatcher(this._scope, serviceWorker)});
       context.on(CRBrowserContext.CREvents.ServiceWorker, serviceWorker => this._dispatchEvent('serviceWorker', { worker: new WorkerDispatcher(this._scope, serviceWorker) }));
@@ -67,23 +81,23 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     context.on(BrowserContext.Events.Request, (request: Request) =>  {
       return this._dispatchEvent('request', {
         request: RequestDispatcher.from(this._scope, request),
-        page: PageDispatcher.fromNullable(this._scope, request.frame()._page.initializedOrUndefined())
+        page: PageDispatcher.fromPage(this._scope, request.frame()._page.initializedOrUndefined())
       });
     });
     context.on(BrowserContext.Events.Response, (response: Response) => this._dispatchEvent('response', {
       response: ResponseDispatcher.from(this._scope, response),
-      page: PageDispatcher.fromNullable(this._scope, response.frame()._page.initializedOrUndefined())
+      page: PageDispatcher.fromPage(this._scope, response.frame()._page.initializedOrUndefined())
     }));
     context.on(BrowserContext.Events.RequestFailed, (request: Request) => this._dispatchEvent('requestFailed', {
       request: RequestDispatcher.from(this._scope, request),
       failureText: request._failureText,
       responseEndTiming: request._responseEndTiming,
-      page: PageDispatcher.fromNullable(this._scope, request.frame()._page.initializedOrUndefined())
+      page: PageDispatcher.fromPage(this._scope, request.frame()._page.initializedOrUndefined())
     }));
     context.on(BrowserContext.Events.RequestFinished, (request: Request) => this._dispatchEvent('requestFinished', {
       request: RequestDispatcher.from(scope, request),
       responseEndTiming: request._responseEndTiming,
-      page: PageDispatcher.fromNullable(this._scope, request.frame()._page.initializedOrUndefined())
+      page: PageDispatcher.fromPage(this._scope, request.frame()._page.initializedOrUndefined())
     }));
   }
 
@@ -104,7 +118,7 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   }
 
   async newPage(params: channels.BrowserContextNewPageParams, metadata: CallMetadata): Promise<channels.BrowserContextNewPageResult> {
-    return { page: lookupDispatcher<PageDispatcher>(await this._context.newPage(metadata)) };
+    return { page: lookupDispatcher<PageDispatcher>(await this._context.newPage(metadata, false)) };
   }
 
   async cookies(params: channels.BrowserContextCookiesParams): Promise<channels.BrowserContextCookiesResult> {

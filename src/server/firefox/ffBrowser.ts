@@ -228,7 +228,7 @@ export class FFBrowserContext extends BrowserContext {
     return this._ffPages().map(ffPage => ffPage._initializedPage).filter(pageOrNull => !!pageOrNull) as Page[];
   }
 
-  async newPageDelegate(): Promise<PageDelegate> {
+  async newPageDelegate(isInternal: boolean): Promise<PageDelegate> {
     assertBrowserContextIsNotOwned(this);
     const { targetId } = await this._browser._connection.send('Browser.newPage', {
       browserContextId: this._browserContextId
@@ -237,7 +237,10 @@ export class FFBrowserContext extends BrowserContext {
         throw new Error(`Invalid timezone ID: ${this._options.timezoneId}`);
       throw e;
     });
-    return this._browser._ffPages.get(targetId)!;
+    const ffPage = this._browser._ffPages.get(targetId)!;
+    if (isInternal)
+      ffPage._page.attribution.isInternal = true;
+    return ffPage;
   }
 
   async _doCookies(urls: string[]): Promise<types.NetworkCookie[]> {

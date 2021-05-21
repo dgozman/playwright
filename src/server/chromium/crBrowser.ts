@@ -300,7 +300,7 @@ export class CRBrowserContext extends BrowserContext {
     return result;
   }
 
-  async newPageDelegate(): Promise<PageDelegate> {
+  async newPageDelegate(isInternal: boolean): Promise<PageDelegate> {
     assertBrowserContextIsNotOwned(this);
 
     const oldKeys = this._browser.isClank() ? new Set(this._browser._crPages.keys()) : undefined;
@@ -323,7 +323,10 @@ export class CRBrowserContext extends BrowserContext {
       assert(newKeys.size === 1);
       [ targetId ] = [...newKeys];
     }
-    return this._browser._crPages.get(targetId)!;
+    const crPage = this._browser._crPages.get(targetId)!;
+    if (isInternal)
+      crPage._page.attribution.isInternal = true;
+    return crPage;
   }
 
   async _doCookies(urls: string[]): Promise<types.NetworkCookie[]> {

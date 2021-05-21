@@ -32,6 +32,9 @@ it('should capture local storage', async ({ contextFactory }) => {
   await page1.evaluate(() => {
     localStorage['name2'] = 'value2';
   });
+
+  let hadNewPage = false;
+  context.on('page', () => hadNewPage = true);
   const { origins } = await context.storageState();
   expect(origins).toEqual([{
     origin: 'https://www.example.com',
@@ -46,6 +49,7 @@ it('should capture local storage', async ({ contextFactory }) => {
       value: 'value2'
     }],
   }]);
+  expect(hadNewPage).toBe(false);
 });
 
 it('should set local storage', async ({ browser }) => {

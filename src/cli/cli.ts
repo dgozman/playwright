@@ -306,13 +306,7 @@ async function launchContext(options: Options, headless: boolean, executablePath
 
   const context = await browser.newContext(contextOptions);
 
-  let closingBrowser = false;
   async function closeBrowser() {
-    // We can come here multiple times. For example, saving storage creates
-    // a temporary page and we call closeBrowser again when that page closes.
-    if (closingBrowser)
-      return;
-    closingBrowser = true;
     if (options.saveStorage)
       await context.storageState({ path: options.saveStorage }).catch(e => null);
     await browser.close();

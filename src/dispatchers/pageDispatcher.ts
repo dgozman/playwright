@@ -38,21 +38,21 @@ import { createGuid } from '../utils/utils';
 export class PageDispatcher extends Dispatcher<Page, channels.PageInitializer> implements channels.PageChannel {
   private _page: Page;
 
-  static fromNullable(scope: DispatcherScope, page: Page | undefined): PageDispatcher | undefined {
-    if (!page)
+  static fromPage(scope: DispatcherScope, page: Page | undefined): PageDispatcher | undefined {
+    if (!page || page.attribution.isInternal)
       return undefined;
     const result = existingDispatcher<PageDispatcher>(page);
     return result || new PageDispatcher(scope, page);
   }
 
-  constructor(scope: DispatcherScope, page: Page) {
+  private constructor(scope: DispatcherScope, page: Page) {
     // TODO: theoretically, there could be more than one frame already.
     // If we split pageCreated and pageReady, there should be no main frame during pageCreated.
     super(scope, page, 'Page', {
       mainFrame: FrameDispatcher.from(scope, page.mainFrame()),
       viewportSize: page.viewportSize() || undefined,
       isClosed: page.isClosed(),
-      opener: PageDispatcher.fromNullable(scope, page.opener())
+      opener: PageDispatcher.fromPage(scope, page.opener())
     }, true);
     this._page = page;
     page.on(Page.Events.Close, () => {
