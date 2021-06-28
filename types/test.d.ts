@@ -282,12 +282,56 @@ export interface WorkerInfo {
    * Unique worker index. Also available as `process.env.TEST_WORKER_INDEX`.
    */
   workerIndex: number;
+
+  /**
+   * Call this method in beforeAll to skip all tests that use this hook.
+   */
+  skip(): void;
+  skip(condition: boolean): void;
+  skip(condition: boolean, description: string): void;
+
+  /**
+   * Call this method in beforeAll to mark all tests that use this hook as "needs to be fixed". These tests will not be run.
+   */
+  fixme(): void;
+  fixme(condition: boolean): void;
+  fixme(condition: boolean, description: string): void;
+
+  /**
+   * Call this method in beforeAll to mark all tests that use this hook as "expected to fail". These tests will be run and must fail.
+   */
+  fail(): void;
+  fail(condition: boolean): void;
+  fail(condition: boolean, description: string): void;
+
+  /**
+   * Call this method in beforeAll to mark all tests that use this hook as slow. The default timeout will be trippled.
+   */
+  slow(): void;
+  slow(condition: boolean): void;
+  slow(condition: boolean, description: string): void;
 }
 
 /**
  * Information about a particular test run.
  */
-export interface TestInfo extends WorkerInfo {
+export interface TestInfo {
+  /**
+   * Testing configuration.
+   */
+  config: FullConfig;
+
+  /**
+   * Specific project configuration for this worker.
+   * Different projects are always run in separate processes.
+   */
+  project: FullProject;
+
+  /**
+   * Unique worker index. Also available as `process.env.TEST_WORKER_INDEX`.
+   */
+  workerIndex: number;
+
   /**
    * Test title as passed to `test('my test title', testFunction)`.
    */

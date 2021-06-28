@@ -24,7 +24,7 @@ import { TestBeginPayload, TestEndPayload, RunPayload, TestEntry, DonePayload, W
 import { setCurrentTestInfo } from './globals';
 import { Loader } from './loader';
 import { Spec, Suite, Test } from './test';
-import { TestInfo, WorkerInfo } from './types';
+import { Annotations, TestInfo, WorkerInfo } from './types';
 import { ProjectImpl } from './project';
 import { FixtureRunner } from './fixtures';
 
@@ -106,6 +106,10 @@ export class WorkerRunner extends EventEmitter {
       workerIndex: this._params.workerIndex,
       project: this._project.config,
       config: this._loader.fullConfig(),
+      skip: () => {},
+      fixme: () => {},
+      fail: () => {},
+      slow: () => {},
     };
   }
 
@@ -127,34 +131,53 @@ export class WorkerRunner extends EventEmitter {
     }
 
     this._fixtureRunner.setPool(this._project.buildPool(anySpec));
-    await this._runSuite(fileSuite);
+    await this._runSuite(fileSuite, []);
     if (this._isStopped)
       return;
 
     this._reportDone();
   }
 
-  private async _runSuite(suite: Suite) {
+  private async _runSuite(suite: Suite, annotations: Annotations) {
     if (this._isStopped)
       return;
-    const skipHooks = !this._hasTestsToRun(suite);
+    const skipHooks = !this._hasTestsToRun(suite) || annotations.some(a => a.type === 'fixme' || a.type === 'skip');
+    // Make a copy to not overwrite parent's annotations.
+    annotations = annotations.slice();
+    const modifier = (type: 'skip' | 'fixme' | 'fail' | 'slow', ...args: [arg?: any, description?: string]) => {
+      if (args.length >= 1 && !args[0])
+        return;
+      annotations.push({ type, description: args[1] });
+      if (type === 'fixme' || type === 'skip')
+        throw new SkipError();
+    };
+    this._workerInfo.skip = modifier.bind(null, 'skip');
+    this._workerInfo.fixme = modifier.bind(null, 'fixme');
+    this._workerInfo.fail = modifier.bind(null, 'fail');
+    this._workerInfo.slow = modifier.bind(null, 'slow');
+
     for (const hook of suite._hooks) {
       if (hook.type !== 'beforeAll' || skipHooks)
         continue;
       if (this._isStopped)
         return;
       // TODO: separate timeout for beforeAll?
-      const result = await raceAgainstDeadline(this._fixtureRunner.resolveParametersAndRunHookOrTest(hook.fn, 'worker', this._workerInfo), this._deadline());
-      if (result.timedOut) {
-        this._fatalError = serializeError(new Error(`Timeout of ${this._project.config.timeout}ms exceeded while running beforeAll hook`));
-        this._reportDoneAndStop();
+      try {
+        const result = await raceAgainstDeadline(this._fixtureRunner.resolveParametersAndRunHookOrTest(hook.fn, 'worker', this._workerInfo), this._deadline());
+        if (result.timedOut) {
+          this._fatalError = serializeError(new Error(`Timeout of ${this._project.config.timeout}ms exceeded while running beforeAll hook`));
+          this._reportDoneAndStop();
+        }
+      } catch (error) {
+        if (!(error instanceof SkipError))
+          throw error;
       }
     }
     for (const entry of suite._entries) {
       if (entry instanceof Suite)
-        await this._runSuite(entry);
+        await this._runSuite(entry, annotations);
       else
-        await this._runSpec(entry);
+        await this._runSpec(entry, annotations);
     }
     for (const hook of suite._hooks) {
       if (hook.type !== 'afterAll' || skipHooks)
@@ -170,7 +193,7 @@ export class WorkerRunner extends EventEmitter {
     }
   }
 
-  private async _runSpec(spec: Spec) {
+  private async _runSpec(spec: Spec, annotations: Annotations) {
     if (this._isStopped)
       return;
     const test = spec.tests[0];
@@ -243,6 +266,25 @@ export class WorkerRunner extends EventEmitter {
           deadlineRunner.setDeadline(deadline());
       },
     };
+
+    // Process annotations defined on parent suites.
+    for (const annotation of annotations) {
+      testInfo.annotations.push(annotation);
+      switch (annotation.type) {
+        case 'fixme':
+        case 'skip':
+          testInfo.expectedStatus = 'skipped';
+          break;
+        case 'fail':
+          if (testInfo.expectedStatus !== 'skipped')
+            testInfo.expectedStatus = 'failed';
+          break;
+        case 'slow':
+          testInfo.setTimeout(testInfo.timeout * 3);
+          break;
+      }
+    }
+
     this._setCurrentTest({ testInfo, testId });
     const deadline = () => {
       return testInfo.timeout ? startTime + testInfo.timeout : undefined;

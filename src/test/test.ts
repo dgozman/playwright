@@ -16,7 +16,7 @@
 
 import * as reporterTypes from './reporter';
 import type { TestTypeImpl } from './testType';
-import { Location } from './types';
+import { Annotations, Location } from './types';
 
 class Base {
   title: string;
@@ -167,7 +167,7 @@ export class Test implements reporterTypes.Test {
   skipped = false;
   expectedStatus: reporterTypes.TestStatus = 'passed';
   timeout = 0;
-  annotations: { type: string, description?: string }[] = [];
+  annotations: Annotations = [];
   projectName = '';
   retries = 0;
 

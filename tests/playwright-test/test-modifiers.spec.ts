@@ -214,3 +214,41 @@ test('modifier with a function should throw in the test', async ({ runInlineTest
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain('test.skip() with a function can only be called inside describe block');
 });
+
+test('workerInfo.skip should skip beforeEach and tests', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      const { test } = pwt;
+      const logs = [];
+      test.beforeEach(() => {
+        console.log('\\n%%beforeEach');
+      });
+      test('passed', () => {
+        console.log('\\n%%passed');
+      });
+      test.describe('suite1', () => {
+        test.beforeAll(({}, workerInfo) => {
+          workerInfo.skip(true, 'reason');
+        });
+        test('skipped1', () => {
+          console.log('\\n%%skipped1');
+        });
+        test.describe('suite2', () => {
+          test('skipped2', () => {
+            console.log('\\n%%skipped2');
+          });
+        });
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+  expect(result.skipped).toBe(2);
+  expect(result.report.suites[0].specs[0].tests[0].annotations).toEqual([]);
+  expect(result.report.suites[0].suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'reason' }]);
+  expect(result.report.suites[0].suites[0].suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'reason' }]);
+  expect(result.output.split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%beforeEach',
+    '%%passed',
+  ]);
+});
