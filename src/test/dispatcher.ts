@@ -17,7 +17,7 @@
 import child_process from 'child_process';
 import path from 'path';
 import { EventEmitter } from 'events';
-import { RunPayload, TestBeginPayload, TestEndPayload, DonePayload, TestOutputPayload, WorkerInitParams } from './ipc';
+import { RunPayload, TestBeginPayload, TestEndPayload, DonePayload, TestOutputPayload, WorkerInitParams, TestStepPayload } from './ipc';
 import type { TestResult, Reporter, TestStatus } from '../../types/testReporter';
 import { Suite, TestCase } from './test';
 import { Loader } from './loader';
@@ -190,8 +190,8 @@ export class Dispatcher {
         for (const { testId } of remaining) {
           const { test, result } = this._testById.get(testId)!;
           // There might be a single test that has started but has not finished yet.
-          if (testId !== lastStartedTestId)
-            this._reportTestBegin(test);
+          if (testId !== lastStartedTestId && this._shouldReportTestEvent())
+            this._reporter.onTestBegin?.(test);
           result.error = params.fatalError;
           this._reportTestEnd(test, result, 'failed');
           failedTestIds.add(testId);
@@ -263,10 +263,16 @@ export class Dispatcher {
   _createWorker(entry: DispatcherEntry) {
     const worker = new Worker(this);
     worker.on('testBegin', (params: TestBeginPayload) => {
-      const { test, result: testRun  } = this._testById.get(params.testId)!;
-      testRun.workerIndex = params.workerIndex;
-      testRun.startTime = new Date(params.startWallTime);
-      this._reportTestBegin(test);
+      const { test, result } = this._testById.get(params.testId)!;
+      result.workerIndex = params.workerIndex;
+      result.startTime = new Date(params.startWallTime);
+      if (this._shouldReportTestEvent())
+        this._reporter.onTestBegin?.(test);
+    });
+    worker.on('testStep', (params: TestStepPayload) => {
+      const { test } = this._testById.get(params.testId)!;
+      if (this._shouldReportTestEvent())
+        this._reporter.onTestStep?.(test, params.stepTitle);
     });
     worker.on('testEnd', (params: TestEndPayload) => {
       const { test, result } = this._testById.get(params.testId)!;
@@ -321,12 +327,9 @@ export class Dispatcher {
     }
   }
 
-  private _reportTestBegin(test: TestCase) {
-    if (this._isStopped)
-      return;
+  private _shouldReportTestEvent() {
     const maxFailures = this._loader.fullConfig().maxFailures;
-    if (!maxFailures || this._failureCount < maxFailures)
-      this._reporter.onTestBegin?.(test);
+    return !this._isStopped && (!maxFailures || this._failureCount < maxFailures);
   }
 
   private _reportTestEnd(test: TestCase, result: TestResult, status: TestStatus) {

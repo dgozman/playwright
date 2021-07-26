@@ -35,6 +35,11 @@ export type TestBeginPayload = {
   workerIndex: number;
 };
 
+export type TestStepPayload = {
+  testId: string;
+  stepTitle: string;
+};
+
 export type TestEndPayload = {
   testId: string;
   duration: number;

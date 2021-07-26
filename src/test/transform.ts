@@ -76,6 +76,7 @@ export function installTransform(): () => void {
         [require.resolve('@babel/preset-typescript'), { onlyRemoveTypeImports: true }],
       ],
       plugins: [
+        [require.resolve('@babel/plugin-proposal-decorators'), { decoratorsBeforeExport: true, legacy: false }],
         [require.resolve('@babel/plugin-proposal-class-properties')],
         [require.resolve('@babel/plugin-proposal-numeric-separator')],
         [require.resolve('@babel/plugin-proposal-logical-assignment-operators')],

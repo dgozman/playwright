@@ -44,9 +44,14 @@ class ListReporter extends BaseReporter {
         process.stdout.write('\n');
         this._lastRow++;
       }
-      process.stdout.write('     ' + colors.gray(formatTestTitle(this.config, test) + ': ') + '\n');
+      process.stdout.write('     ' + colors.gray(formatTestTitle(this.config, test)) + '\n');
     }
     this._testRows.set(test, this._lastRow++);
+  }
+
+  onTestStep(test: TestCase, stepTitle: string) {
+    if (process.stdout.isTTY)
+      this._updateTestLine(test, '     ' + colors.gray(formatTestTitle(this.config, test, stepTitle)));
   }
 
   onStdOut(chunk: string | Buffer, test?: TestCase) {
@@ -85,25 +90,29 @@ class ListReporter extends BaseReporter {
         text = '\u001b[2K\u001b[0G' + colors.red(`${statusMark}${++this._failure}) ` + title) + duration;
     }
 
-    const testRow = this._testRows.get(test)!;
-    // Go up if needed
-    if (process.stdout.isTTY && testRow !== this._lastRow)
-      process.stdout.write(`\u001B[${this._lastRow - testRow}A`);
-    // Erase line
-    if (process.stdout.isTTY)
-      process.stdout.write('\u001B[2K');
-    if (!process.stdout.isTTY && this._needNewLine) {
-      this._needNewLine = false;
+    if (process.stdout.isTTY) {
+      this._updateTestLine(test, text);
+    } else {
+      if (this._needNewLine) {
+        this._needNewLine = false;
+        process.stdout.write('\n');
+      }
+      process.stdout.write(text);
       process.stdout.write('\n');
     }
+  }
+
+  private _updateTestLine(test: TestCase, text: string) {
+    const testRow = this._testRows.get(test)!;
+    // Go up if needed
+    if (testRow !== this._lastRow)
+      process.stdout.write(`\u001B[${this._lastRow - testRow}A`);
+    // Erase line
+    process.stdout.write('\u001B[2K');
     process.stdout.write(text);
     // Go down if needed.
-    if (testRow !== this._lastRow) {
-      if (process.stdout.isTTY)
-        process.stdout.write(`\u001B[${this._lastRow - testRow}E`);
-      else
-        process.stdout.write('\n');
-    }
+    if (testRow !== this._lastRow)
+      process.stdout.write(`\u001B[${this._lastRow - testRow}E`);
   }
 
   async onEnd(result: FullResult) {

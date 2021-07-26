@@ -235,6 +235,11 @@ export interface Reporter {
   onTestBegin?(test: TestCase): void;
 
   /**
+   * Called after a test step has been started in the worker process.
+   */
+  onTestStep?(test: TestCase, stepTitle: string): void;
+
+  /**
    * Called when something has been written to the standard output in the worker process.
    * When `test` is given, output happened while the test was running.
    */

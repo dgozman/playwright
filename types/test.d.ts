@@ -497,6 +497,15 @@ interface TestFunction<TestArgs> {
  * ```
  */
 export interface TestType<TestArgs extends KeyValue, WorkerArgs extends KeyValue> extends TestFunction<TestArgs & WorkerArgs> {
+  case: ((title: string | undefined) => ClassDecorator) & {
+    fixture: (name?: string) => PropertyDecorator;
+    testInfo: () => PropertyDecorator;
+    step: (title?: string) => MethodDecorator;
+    setup: (title?: string) => MethodDecorator;
+    teardown: (title?: string) => MethodDecorator;
+    extend<K extends string, T>(name: K, cls: (new() => T)): TestType<TestArgs & { [key in K]: T }, WorkerArgs>;
+  };
+
   /**
    * Use `test.only()` instead of `test()` to ignore all other tests and only run this one.
    * Useful for debugging a particular test.

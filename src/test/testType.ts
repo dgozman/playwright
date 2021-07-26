@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+import { TestInfo } from '../../types/test';
 import { expect } from './expect';
+import { setFixtureParameterNames } from './fixtures';
 import { currentlyLoadingFileSuite, currentTestInfo, setCurrentlyLoadingFileSuite } from './globals';
 import { TestCase, Suite } from './test';
 import { wrapFunctionWithLocation } from './transform';
@@ -52,6 +54,13 @@ export class TestTypeImpl {
     test.use = wrapFunctionWithLocation(this._use.bind(this));
     test.extend = wrapFunctionWithLocation(this._extend.bind(this));
     test.declare = wrapFunctionWithLocation(this._declare.bind(this));
+    test.case = wrapFunctionWithLocation(this._case.bind(this));
+    test.case.step = wrapFunctionWithLocation(this._caseStep.bind(this));
+    test.case.fixture = wrapFunctionWithLocation(this._caseFixture.bind(this));
+    test.case.testInfo = wrapFunctionWithLocation(this._caseTestInfo.bind(this));
+    test.case.extend = wrapFunctionWithLocation(this._caseExtend.bind(this));
+    test.case.setup = wrapFunctionWithLocation(this._caseSetup.bind(this));
+    test.case.teardown = wrapFunctionWithLocation(this._caseTeardown.bind(this));
     this.test = test;
   }
 
@@ -161,6 +170,92 @@ export class TestTypeImpl {
     declared.testType = child;
     return child.test;
   }
+
+  private _case(location: Location, title: string | undefined) {
+    return (descriptor: any) => {
+      if (descriptor.kind !== 'class')
+        throw errorWithLocation(location, `@test.case() decorator should be used on classes`);
+      return {
+        ...descriptor,
+        finisher: (ctr: (new() => any)) => {
+          this._createTest('default', location, title || ctr.name, createTestCaseFunction(ctr));
+        }
+      };
+    };
+  }
+
+  private _caseStep(location: Location, title: string | undefined) {
+    return (descriptor: any) => {
+      if (descriptor.kind !== 'method')
+        throw errorWithLocation(location, `@test.case.step() decorator should be used on class methods`);
+      return {
+        ...descriptor,
+        finisher: (ctr: (new() => any)) => {
+          ensureClassData(ctr).steps.push({ title: title || descriptor.key, method: descriptor.key });
+        },
+      }
+    };
+  }
+
+  private _caseFixture(location: Location, name: string | undefined) {
+    return (descriptor: any) => {
+      if (descriptor.kind !== 'field')
+        throw errorWithLocation(location, `@test.case.fixture() decorator should be used on class fields`);
+      return {
+        ...descriptor,
+        finisher: (ctr: (new() => any)) => {
+          ensureClassData(ctr).fixtures.push({ name: name || descriptor.key, field: descriptor.key });
+        },
+      }
+    };
+  }
+
+  private _caseTestInfo(location: Location) {
+    return (descriptor: any) => {
+      if (descriptor.kind !== 'field')
+        throw errorWithLocation(location, `@test.case.testInfo() decorator should be used on class fields`);
+      return {
+        ...descriptor,
+        finisher: (ctr: (new() => any)) => {
+          ensureClassData(ctr).testInfos.push({ field: descriptor.key });
+        },
+      }
+    };
+  }
+
+  private _caseSetup(location: Location, title: string | undefined) {
+    return (descriptor: any) => {
+      if (descriptor.kind !== 'method')
+        throw errorWithLocation(location, `@test.case.setup() decorator should be used on class methods`);
+      return {
+        ...descriptor,
+        finisher: (ctr: (new() => any)) => {
+          ensureClassData(ctr).setups.push({ title: title || descriptor.key, method: descriptor.key });
+        },
+      }
+    };
+  }
+
+  private _caseTeardown(location: Location, title: string | undefined) {
+    return (descriptor: any) => {
+      if (descriptor.kind !== 'method')
+        throw errorWithLocation(location, `@test.case.teardown() decorator should be used on class methods`);
+      return {
+        ...descriptor,
+        finisher: (ctr: (new() => any)) => {
+          ensureClassData(ctr).teardowns.push({ title: title || descriptor.key, method: descriptor.key });
+        },
+      }
+    };
+  }
+
+  private _caseExtend(location: Location, name: string, ctr: (new() => any)) {
+    // Somehow check ctr is a class constructor?
+    if (ensureClassData(ctr).steps.length)
+      throw errorWithLocation(location, `Fixture added with test.case.extend cannot define @test.case.step()`);
+    const fixturesWithLocation = { fixtures: { [name]: createTestCaseFixture(ctr) }, location };
+    return new TestTypeImpl([...this.fixtures, fixturesWithLocation]).test;
+  }
 }
 
 function throwIfRunningInsideJest() {
@@ -174,3 +269,82 @@ function throwIfRunningInsideJest() {
 }
 
 export const rootTestType = new TestTypeImpl([]);
+
+const kClassData = Symbol('classdata');
+type ClassData = {
+  fixtures: { name: string, field: string }[],
+  testInfos: { field: string }[],
+  steps: { title: string, method: string }[],
+  setups: { title: string, method: string }[],
+  teardowns: { title: string, method: string }[],
+};
+function cloneClassData(data: ClassData): ClassData {
+  return {
+    fixtures: [...data.fixtures],
+    testInfos: [...data.testInfos],
+    steps: [...data.steps],
+    setups: [...data.setups],
+    teardowns: [...data.teardowns],
+  };
+}
+function ensureClassData(cls: any): ClassData {
+  let data: ClassData = cls[kClassData];
+  if (!data) {
+    data = { fixtures: [], testInfos: [], steps: [], setups: [], teardowns: [] };
+    cls[kClassData] = data;
+  } else if (!cls.hasOwnProperty(kClassData)) {
+    // When X extends A, we get original data from A (via __proto__) and make an isolated copy for X.
+    // - This way we inherit all decorators from the parent class.
+    // - When both X and Y extend the same base A, they get isolated data and separate steps.
+    data = cloneClassData(data);
+    cls[kClassData] = data;
+  }
+  return data;
+}
+
+function createTestCaseFunction(ctr: (new() => any)) {
+  const data = ensureClassData(ctr);
+  const fn = async (fixtures: any, testInfo: TestInfo) => {
+    const instance = new ctr();
+    for (const { name, field } of data.fixtures)
+      instance[field] = fixtures[name];
+    for (const { field } of data.testInfos)
+      instance[field] = testInfo;
+    for (const { title, method } of data.setups) {
+      (testInfo as any)._emitTestStep(title);
+      await instance[method]();
+    }
+    for (const { title, method } of data.steps) {
+      (testInfo as any)._emitTestStep(title);
+      await instance[method]();
+    }
+    for (const { title, method } of data.teardowns) {
+      (testInfo as any)._emitTestStep(title);
+      await instance[method]();
+    }
+  };
+  setFixtureParameterNames(fn, data.fixtures.map(f => f.name));
+  return fn;
+}
+
+function createTestCaseFixture(ctr: (new() => any)) {
+  const data = ensureClassData(ctr);
+  const fn = async (fixtures: any, use: (r: any) => Promise<void>, testInfo: TestInfo) => {
+    const instance = new ctr();
+    for (const { name, field } of data.fixtures)
+      instance[field] = fixtures[name];
+    for (const { field } of data.testInfos)
+      instance[field] = testInfo;
+    for (const { title, method } of data.setups) {
+      (testInfo as any)._emitTestStep(title);
+      await instance[method]();
+    }
+    await use(instance);
+    for (const { title, method } of data.teardowns) {
+      (testInfo as any)._emitTestStep(title);
+      await instance[method]();
+    }
+  };
+  setFixtureParameterNames(fn, data.fixtures.map(f => f.name));
+  return fn;
+}

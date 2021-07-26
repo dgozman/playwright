@@ -156,12 +156,13 @@ function relativeTestPath(config: FullConfig, test: TestCase): string {
   return path.relative(config.rootDir, test.location.file) || path.basename(test.location.file);
 }
 
-export function formatTestTitle(config: FullConfig, test: TestCase): string {
+export function formatTestTitle(config: FullConfig, test: TestCase, stepTitle?: string): string {
   // root, project, file, ...describes, test
   const [, projectName, , ...titles] = test.titlePath();
   const location = `${relativeTestPath(config, test)}:${test.location.line}:${test.location.column}`;
   const projectTitle = projectName ? `[${projectName}] › ` : '';
-  return `${projectTitle}${location} › ${titles.join(' ')}`;
+  stepTitle = stepTitle ? ` › ${stepTitle}` : '';
+  return `${projectTitle}${location} › ${titles.join(' ')}${stepTitle}`;
 }
 
 function formatTestHeader(config: FullConfig, test: TestCase, indent: string, index?: number): string {

@@ -283,6 +283,10 @@ function fixtureParameterNames(fn: Function | any, location: Location): string[]
   return fn[signatureSymbol];
 }
 
+export function setFixtureParameterNames(fn: Function, names: string[]) {
+  (fn as any)[signatureSymbol] = names;
+}
+
 function innerFixtureParameterNames(fn: Function, location: Location): string[] {
   const text = fn.toString();
   const match = text.match(/(?:async)?(?:\s+function)?[^(]*\(([^)]*)/);

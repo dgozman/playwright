@@ -33,6 +33,11 @@ export class Multiplexer implements Reporter {
       reporter.onTestBegin?.(test);
   }
 
+  onTestStep(test: TestCase, stepTitle: string) {
+    for (const reporter of this._reporters)
+      reporter.onTestStep?.(test, stepTitle);
+  }
+
   onStdOut(chunk: string | Buffer, test?: TestCase) {
     for (const reporter of this._reporters)
       reporter.onStdOut?.(chunk, test);

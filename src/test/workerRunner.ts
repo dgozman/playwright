@@ -20,7 +20,7 @@ import rimraf from 'rimraf';
 import util from 'util';
 import { EventEmitter } from 'events';
 import { monotonicTime, DeadlineRunner, raceAgainstDeadline, serializeError } from './util';
-import { TestBeginPayload, TestEndPayload, RunPayload, TestEntry, DonePayload, WorkerInitParams } from './ipc';
+import { TestBeginPayload, TestEndPayload, RunPayload, TestEntry, DonePayload, WorkerInitParams, TestStepPayload } from './ipc';
 import { setCurrentTestInfo } from './globals';
 import { Loader } from './loader';
 import { Modifier, Suite, TestCase } from './test';
@@ -261,6 +261,14 @@ export class WorkerRunner extends EventEmitter {
         if (deadlineRunner)
           deadlineRunner.setDeadline(deadline());
       },
+    };
+
+    (testInfo as any)._emitTestStep = (stepTitle: string) => {
+      const payload: TestStepPayload = {
+        testId,
+        stepTitle,
+      };
+      this.emit('testStep', payload);
     };
 
     // Inherit test.setTimeout() from parent suites.
