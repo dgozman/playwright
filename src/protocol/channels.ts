@@ -33,6 +33,7 @@ export type StackFrame = {
 export type Metadata = {
   stack?: StackFrame[],
   apiName?: string,
+  apiId?: string,
 };
 
 export type Point = {

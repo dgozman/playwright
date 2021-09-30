@@ -18,7 +18,7 @@ import { EventEmitter } from 'events';
 import * as channels from '../protocol/channels';
 import { createScheme, ValidationError, Validator } from '../protocol/validator';
 import { debugLogger } from '../utils/debugLogger';
-import { captureStackTrace, ParsedStackTrace } from '../utils/stackTrace';
+import { captureStackTrace, generateDisplayName, ParsedStackTrace } from '../utils/stackTrace';
 import { isUnderTest } from '../utils/utils';
 import type { Connection } from './connection';
 import type { ClientSideInstrumentation, Logger } from './types';
@@ -96,35 +96,37 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
     return channel;
   }
 
-  async _wrapApiCall<R, C extends channels.Channel = T>(func: (channel: C, stackTrace: ParsedStackTrace) => Promise<R>, logger?: Logger): Promise<R> {
+  async _wrapApiCall<R, C extends channels.Channel = T>(func: (channel: C) => Promise<R>, logger?: Logger): Promise<R> {
     logger = logger || this._logger;
     const stackTrace = captureStackTrace();
-    const { apiName, frameTexts } = stackTrace;
+    const { apiName, frameTexts, isNested, apiId } = stackTrace;
+    const wrapped = async () => {
+      let ancestorWithCSI: ChannelOwner<any> = this;
+      while (!ancestorWithCSI._csi && ancestorWithCSI._parent)
+        ancestorWithCSI = ancestorWithCSI._parent;
 
-    let ancestorWithCSI: ChannelOwner<any> = this;
-    while (!ancestorWithCSI._csi && ancestorWithCSI._parent)
-      ancestorWithCSI = ancestorWithCSI._parent;
+      // Do not report nested async calls to CSI.
+      const csi = isNested ? undefined : ancestorWithCSI._csi;
+      const callCookie: { userObject: any } = { userObject: null };
 
-    // Do not report nested async calls to _wrapApiCall.
-    const isNested = stackTrace.allFrames.filter(f => f.function?.includes('_wrapApiCall')).length > 1;
-    const csi = isNested ? undefined : ancestorWithCSI._csi;
-    const callCookie: { userObject: any } = { userObject: null };
-
-    try {
-      logApiCall(logger, `=> ${apiName} started`, isNested);
-      const channel = this._createChannel({}, stackTrace, csi, callCookie);
-      const result = await func(channel as any, stackTrace);
-      csi?.onApiCallEnd(callCookie);
-      logApiCall(logger, `<= ${apiName} succeeded`, isNested);
-      return result;
-    } catch (e) {
-      const innerError = ((process.env.PWDEBUGIMPL || isUnderTest()) && e.stack) ? '\n<inner error>\n' + e.stack : '';
-      e.message = apiName + ': ' + e.message;
-      e.stack = e.message + '\n' + frameTexts.join('\n') + innerError;
-      csi?.onApiCallEnd(callCookie, e);
-      logApiCall(logger, `<= ${apiName} failed`, isNested);
-      throw e;
-    }
+      try {
+        logApiCall(logger, `=> ${apiName} started`, isNested);
+        const channel = this._createChannel({}, stackTrace, csi, callCookie);
+        const result = await func(channel as any);
+        csi?.onApiCallEnd(callCookie);
+        logApiCall(logger, `<= ${apiName} succeeded`, isNested);
+        return result;
+      } catch (e) {
+        const innerError = ((process.env.PWDEBUGIMPL || isUnderTest()) && e.stack) ? '\n<inner error>\n' + e.stack : '';
+        e.message = apiName + ': ' + e.message;
+        e.stack = e.message + '\n' + frameTexts.join('\n') + innerError;
+        csi?.onApiCallEnd(callCookie, e);
+        logApiCall(logger, `<= ${apiName} failed`, isNested);
+        throw e;
+      }
+    };
+    wrapped.displayName = generateDisplayName(apiName, apiId);
+    return wrapped();
   }
 
   private toJSON() {

@@ -15,7 +15,7 @@
  */
 
 import { contextTest } from '../config/browserTest';
-import type { Page } from '../../index';
+import type { Page, BrowserContext } from '../../index';
 import * as path from 'path';
 import type { Source } from '../../src/server/supplements/recorder/recorderTypes';
 import { chromium } from '../../index';

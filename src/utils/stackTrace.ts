@@ -33,12 +33,14 @@ export function rewriteErrorMessage<E extends Error>(e: E, newMessage: string): 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const CLIENT_LIB = path.join(ROOT_DIR, 'lib', 'client');
 const CLIENT_SRC = path.join(ROOT_DIR, 'src', 'client');
+let lastApiId = 0;
 
 export type ParsedStackTrace = {
-  allFrames: StackFrame[];
   frames: StackFrame[];
-  frameTexts: string[];
+  frameTexts: string[];  // !!! replace with stackText
   apiName: string;
+  apiId: string;
+  isNested: boolean;
 };
 
 export function captureStackTrace(): ParsedStackTrace {
@@ -78,20 +80,33 @@ export function captureStackTrace(): ParsedStackTrace {
   }).filter(Boolean) as ParsedFrame[];
 
   let apiName = '';
-  const allFrames = parsedFrames;
+  let apiId = '';
+  let isExpect = false;
+  let isNested = false;
 
-  // expect matchers have the following stack structure:
-  // at Object.__PWTRAP__[expect.toHaveText] (...)
-  // at __EXTERNAL_MATCHER_TRAP__ (...)
-  // at Object.throwingMatcher [as toHaveText] (...)
-  const TRAP = '__PWTRAP__[';
-  const expectIndex = parsedFrames.findIndex(f => f.frameText.includes(TRAP));
-  if (expectIndex !== -1) {
-    const text = parsedFrames[expectIndex].frameText;
+  const apiIndex = parsedFrames.findIndex(f => f.frameText.includes(TRAP));
+  if (apiIndex !== -1) {
+    const text = parsedFrames[apiIndex].frameText;
     const aliasIndex = text.indexOf(TRAP);
-    apiName = text.substring(aliasIndex + TRAP.length, text.indexOf(']'));
-    parsedFrames = parsedFrames.slice(expectIndex + 3);
-  } else {
+    [apiName, apiId] = text.substring(aliasIndex + TRAP.length, text.indexOf(']')).split(';');
+    isExpect = apiName.startsWith('expect.');
+    isNested = !isExpect;
+    if (isExpect) {
+      // expect matchers:
+      //   at Object.PWTRAP[expect.toHaveText;<apiId>] (...)
+      //   at __EXTERNAL_MATCHER_TRAP__ (...)
+      //   at Object.throwingMatcher [as toHaveText] (...)
+      //   at <test function> (...)
+      parsedFrames = parsedFrames.slice(apiIndex + 3);
+    }
+    // regular api calls:
+    //   at Object.PWTRAP[browser.newContext;<apiId>] (...)
+    //   at _wrapApiCall (...)
+    //   at browser.newContext (...)
+    //   at <test function> (...)
+  }
+
+  if (!isExpect) {
     // Deepest transition between non-client code calling into client code
     // is the api entry.
     for (let i = 0; i < parsedFrames.length - 1; i++) {
@@ -104,12 +119,21 @@ export function captureStackTrace(): ParsedStackTrace {
     }
   }
 
+  if (!apiId)
+    apiId = String(lastApiId++);
   return {
-    allFrames: allFrames.map(p => p.frame),
     frames: parsedFrames.map(p => p.frame),
     frameTexts: parsedFrames.map(p => p.frameText),
-    apiName
+    apiName,
+    apiId,
+    isNested,
   };
+}
+
+const TRAP = 'PWTRAP[';
+export function generateDisplayName(apiName: string, apiId?: string) {
+  apiId = apiId || String(lastApiId++);
+  return `${TRAP}${apiName};${apiId}]`;
 }
 
 export function splitErrorMessage(message: string): { name: string, message: string } {

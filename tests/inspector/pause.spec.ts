@@ -192,6 +192,25 @@ it.describe('pause', () => {
     await scriptPromise;
   });
 
+  it('should merge multiple internal tracing calls into a single entry', async ({ page, recorderPageGetter }) => {
+    await page.setContent('<button>Submit</button>');
+    const scriptPromise = (async () => {
+      await page.pause();
+      await page.context().tracing.start();
+      await page.pause();  // 2
+    })();
+    const recorderPage = await recorderPageGetter();
+    await recorderPage.click('[title="Resume"]');
+    await recorderPage.waitForSelector('.source-line-paused:has-text("page.pause();  // 2")');
+    expect(await sanitizeLog(recorderPage)).toEqual([
+      'page.pause- XXms',
+      'tracing.start- XXms',
+      'page.pause',
+    ]);
+    await recorderPage.click('[title="Resume"]');
+    await scriptPromise;
+  });
+
   it('should highlight waitForEvent', async ({ page, recorderPageGetter }) => {
     await page.setContent('<button onclick="console.log(1)">Submit</button>');
     const scriptPromise = (async () => {

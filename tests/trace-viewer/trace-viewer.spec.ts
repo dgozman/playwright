@@ -229,7 +229,7 @@ test('should have correct snapshot size', async ({ showTraceViewer }, testInfo) 
   await expect(traceViewer.snapshotContainer).toHaveCSS('height', '600px');
 });
 
-test('should have correct stack trace', async ({ showTraceViewer }) => {
+test.only('should have correct stack trace', async ({ showTraceViewer }) => {
   const traceViewer = await showTraceViewer(traceFile);
 
   await traceViewer.selectAction('page.click');
@@ -244,6 +244,8 @@ test('should have correct stack trace', async ({ showTraceViewer }) => {
   await expect(traceViewer.stackFrames).toContainText([
     /BrowserType.browserType._onWillCloseContext\s+trace-viewer.spec.ts\s+:\d+/,
   ], { useInnerText: true });
+
+  await traceViewer.page.waitForTimeout(100000);
 });
 
 test('should have network requests', async ({ showTraceViewer }) => {

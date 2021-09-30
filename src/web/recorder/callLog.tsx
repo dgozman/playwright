@@ -16,18 +16,46 @@
 
 import './callLog.css';
 import * as React from 'react';
-import type { CallLog } from '../../server/supplements/recorder/recorderTypes';
+import type { CallLog, CallLogStatus } from '../../server/supplements/recorder/recorderTypes';
 import { msToString } from '../uiUtils';
 
 export interface CallLogProps {
   log: CallLog[],
 }
 
+const kCallStatusPriority: CallLogStatus[] = ['paused', 'error', 'in-progress', 'done'];
+function mergeCallLogs(call1: CallLog, call2: CallLog): CallLog {
+  const statusIndex = Math.min(kCallStatusPriority.indexOf(call1.status), kCallStatusPriority.indexOf(call2.status));
+  const duration = (call1.duration === undefined || call2.duration === undefined) ? undefined : call1.duration + call2.duration;
+  return {
+    id: call1.id,
+    apiId: call1.apiId,
+    title: call1.title,
+    messages: [...call1.messages, ...call2.messages],
+    status: kCallStatusPriority[statusIndex],
+    reveal: call1.reveal || call2.reveal,
+    duration,
+    params: call1.params,
+  };
+}
+
 export const CallLogView: React.FC<CallLogProps> = ({
-  log,
+  log: unmergedLog,
 }) => {
   const messagesEndRef = React.createRef<HTMLDivElement>();
   const [expandOverrides, setExpandOverrides] = React.useState<Map<string, boolean>>(new Map());
+
+  const log = React.useMemo(() => {
+    // Merge call logs with the same api id into a single visual entry.
+    const result = new Map<string, CallLog>();
+    for (const log of unmergedLog) {
+      const key = log.apiId || log.id;
+      const existing = result.get(key);
+      result.set(key, existing ? mergeCallLogs(existing, log) : log);
+    }
+    return Array.from(result.values());
+  }, [unmergedLog]);
+
   React.useLayoutEffect(() => {
     if (log.find(callLog => callLog.reveal))
       messagesEndRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });

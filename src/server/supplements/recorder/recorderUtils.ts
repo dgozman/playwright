@@ -35,6 +35,7 @@ export function metadataToCallLog(metadata: CallMetadata, status: CallLogStatus)
   }
   const callLog: CallLog = {
     id: metadata.id,
+    apiId: metadata.apiId,
     messages: metadata.log,
     title,
     status,

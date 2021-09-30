@@ -26,6 +26,7 @@ export type CallMetadata = {
   method: string;
   params: any;
   apiName?: string;
+  apiId?: string;
   stack?: StackFrame[];
   log: string[];
   snapshots: { title: string, snapshotName: string }[];

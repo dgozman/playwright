@@ -41,6 +41,7 @@ import type { Expect, TestError } from './types';
 import matchers from 'expect/build/matchers';
 import { currentTestInfo } from './globals';
 import { serializeError } from './util';
+import { generateDisplayName } from '../utils/stackTrace';
 
 export const expect: Expect = expectLibrary as any;
 expectLibrary.setState({ expand: false });
@@ -74,10 +75,6 @@ function wrap(matcherName: string, matcher: any) {
       return matcher.call(this, ...args);
 
     const INTERNAL_STACK_LENGTH = 3;
-    // at Object.__PWTRAP__[expect.toHaveText] (...)
-    // at __EXTERNAL_MATCHER_TRAP__ (...)
-    // at Object.throwingMatcher [as toHaveText] (...)
-    // at <test function> (...)
     const stackLines = new Error().stack!.split('\n').slice(INTERNAL_STACK_LENGTH + 1);
     const step = testInfo._addStep({
       category: 'expect',
@@ -111,7 +108,7 @@ function wrap(matcherName: string, matcher: any) {
       reportStepError(e);
     }
   };
-  result.displayName = '__PWTRAP__[expect.' + matcherName + ']';
+  result.displayName = generateDisplayName('expect.' + matcherName);
   return result;
 }
 

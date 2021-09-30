@@ -159,13 +159,17 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel,
   }
 
   setDefaultNavigationTimeout(timeout: number) {
-    this._timeoutSettings.setDefaultNavigationTimeout(timeout);
-    this._channel.setDefaultNavigationTimeoutNoReply({ timeout });
+    this._wrapApiCall(async channel => {
+      this._timeoutSettings.setDefaultNavigationTimeout(timeout);
+      channel.setDefaultNavigationTimeoutNoReply({ timeout });
+    });
   }
 
   setDefaultTimeout(timeout: number) {
-    this._timeoutSettings.setDefaultTimeout(timeout);
-    this._channel.setDefaultTimeoutNoReply({ timeout });
+    this._wrapApiCall(async channel => {
+      this._timeoutSettings.setDefaultTimeout(timeout);
+      channel.setDefaultTimeoutNoReply({ timeout });
+    });
   }
 
   browser(): Browser | null {

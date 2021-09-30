@@ -83,14 +83,14 @@ export class Connection extends EventEmitter {
 
   async sendMessageToServer(object: ChannelOwner, method: string, params: any, maybeStackTrace: ParsedStackTrace | null): Promise<any> {
     const guid = object._guid;
-    const stackTrace: ParsedStackTrace = maybeStackTrace || { frameTexts: [], frames: [], apiName: '', allFrames: [] };
-    const { frames, apiName } = stackTrace;
+    const stackTrace: ParsedStackTrace = maybeStackTrace || { frameTexts: [], frames: [], apiName: '', apiId: '', isNested: false };
+    const { frames, apiName, apiId } = stackTrace;
 
     const id = ++this._lastId;
     const converted = { id, guid, method, params };
     // Do not include metadata in debug logs to avoid noise.
     debugLogger.log('channel:command', converted);
-    const metadata: channels.Metadata = { stack: frames, apiName };
+    const metadata: channels.Metadata = { stack: frames, apiName, apiId };
     this.onmessage({ ...converted, metadata });
 
     if (this._disconnectedErrorMessage)

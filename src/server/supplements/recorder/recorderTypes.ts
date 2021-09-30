@@ -34,6 +34,7 @@ export type CallLogStatus = 'in-progress' | 'done' | 'error' | 'paused';
 
 export type CallLog = {
   id: string;
+  apiId?: string;
   title: string;
   messages: string[];
   status: CallLogStatus;

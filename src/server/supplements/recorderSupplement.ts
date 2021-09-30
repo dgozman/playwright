@@ -55,7 +55,6 @@ export class RecorderSupplement implements InstrumentationListener {
   private _currentCallsMetadata = new Map<CallMetadata, SdkObject>();
   private _recorderSources: Source[];
   private _userSources = new Map<string, Source>();
-  private _allMetadatas = new Map<string, CallMetadata>();
   private _debugger: Debugger;
 
   static showInspector(context: BrowserContext) {
@@ -403,7 +402,6 @@ export class RecorderSupplement implements InstrumentationListener {
     if (this._mode === 'recording')
       return;
     this._currentCallsMetadata.set(metadata, sdkObject);
-    this._allMetadatas.set(metadata.id, metadata);
     this._updateUserSources();
     this.updateCallLog([metadata]);
     if (metadata.params && metadata.params.selector) {
