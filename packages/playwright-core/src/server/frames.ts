@@ -33,6 +33,7 @@ import { CallMetadata, internalCallMetadata, SdkObject } from './instrumentation
 import type InjectedScript from './injected/injectedScript';
 import type { ElementStateWithoutStable, FrameExpectParams, InjectedScriptPoll, InjectedScriptProgress } from './injected/injectedScript';
 import { isSessionClosedError } from './common/protocolError';
+import * as actions from './actions';
 
 type ContextData = {
   contextPromise: Promise<dom.FrameExecutionContext>;
@@ -974,47 +975,29 @@ export class Frame extends SdkObject {
   async click(metadata: CallMetadata, selector: string, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => handle._click(progress, options)));
+      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => actions.click(progress, handle, options)));
     }, this._page._timeoutSettings.timeout(options));
   }
 
   async dblclick(metadata: CallMetadata, selector: string, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => handle._dblclick(progress, options)));
+      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => actions.dblclick(progress, handle, options)));
     }, this._page._timeoutSettings.timeout(options));
   }
 
   async dragAndDrop(metadata: CallMetadata, source: string, target: string,  options: types.DragActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}) {
     const controller = new ProgressController(metadata, this);
     await controller.run(async progress => {
-      dom.assertDone(await this._retryWithProgressIfNotConnected(progress, source, options.strict, async handle => {
-        return handle._retryPointerAction(progress, 'move and down', false, async point => {
-          await this._page.mouse.move(point.x, point.y);
-          await this._page.mouse.down();
-        }, {
-          ...options,
-          position: options.sourcePosition,
-          timeout: progress.timeUntilDeadline(),
-        });
-      }));
-      dom.assertDone(await this._retryWithProgressIfNotConnected(progress, target, options.strict, async handle => {
-        return handle._retryPointerAction(progress, 'move and up', false, async point => {
-          await this._page.mouse.move(point.x, point.y);
-          await this._page.mouse.up();
-        }, {
-          ...options,
-          position: options.targetPosition,
-          timeout: progress.timeUntilDeadline(),
-        });
-      }));
+      dom.assertDone(await this._retryWithProgressIfNotConnected(progress, source, options.strict, async handle => actions.drag(progress, handle, options)));
+      dom.assertDone(await this._retryWithProgressIfNotConnected(progress, target, options.strict, async handle => actions.drop(progress, handle, options)));
     }, this._page._timeoutSettings.timeout(options));
   }
 
   async tap(metadata: CallMetadata, selector: string, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => handle._tap(progress, options)));
+      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => actions.tap(progress, handle, options)));
     }, this._page._timeoutSettings.timeout(options));
   }
 
@@ -1101,7 +1084,7 @@ export class Frame extends SdkObject {
   async hover(metadata: CallMetadata, selector: string, options: types.PointerActionOptions & types.PointerActionWaitOptions = {}) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => handle._hover(progress, options)));
+      return dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, handle => actions.hover(progress, handle, options)));
     }, this._page._timeoutSettings.timeout(options));
   }
 

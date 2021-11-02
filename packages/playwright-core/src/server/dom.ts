@@ -26,6 +26,7 @@ import { Page } from './page';
 import { Progress, ProgressController } from './progress';
 import { SelectorInfo } from './selectors';
 import * as types from './types';
+import * as actions from './actions';
 
 type SetInputFilesFiles = channels.ElementHandleSetInputFilesParams['files'];
 
@@ -234,258 +235,44 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     await this._page._doSlowMo();
   }
 
-  async _scrollRectIntoViewIfNeeded(rect?: types.Rect): Promise<'error:notvisible' | 'error:notconnected' | 'done'> {
-    return await this._page._delegate.scrollRectIntoViewIfNeeded(this, rect);
-  }
-
-  async _waitAndScrollIntoViewIfNeeded(progress: Progress): Promise<void> {
-    while (progress.isRunning()) {
-      assertDone(throwRetargetableDOMError(await this._waitForDisplayedAtStablePosition(progress, false /* force */, false /* waitForEnabled */)));
-
-      progress.throwIfAborted();  // Avoid action that has side-effects.
-      const result = throwRetargetableDOMError(await this._scrollRectIntoViewIfNeeded());
-      if (result === 'error:notvisible')
-        continue;
-      assertDone(result);
-      return;
-    }
-  }
-
   async scrollIntoViewIfNeeded(metadata: CallMetadata, options: types.TimeoutOptions = {}) {
     const controller = new ProgressController(metadata, this);
-    return controller.run(
-        progress => this._waitAndScrollIntoViewIfNeeded(progress),
-        this._page._timeoutSettings.timeout(options));
-  }
-
-  private async _clickablePoint(): Promise<types.Point | 'error:notvisible' | 'error:notinviewport'> {
-    const intersectQuadWithViewport = (quad: types.Quad): types.Quad => {
-      return quad.map(point => ({
-        x: Math.min(Math.max(point.x, 0), metrics.width),
-        y: Math.min(Math.max(point.y, 0), metrics.height),
-      })) as types.Quad;
-    };
-
-    const computeQuadArea = (quad: types.Quad) => {
-      // Compute sum of all directed areas of adjacent triangles
-      // https://en.wikipedia.org/wiki/Polygon#Simple_polygons
-      let area = 0;
-      for (let i = 0; i < quad.length; ++i) {
-        const p1 = quad[i];
-        const p2 = quad[(i + 1) % quad.length];
-        area += (p1.x * p2.y - p2.x * p1.y) / 2;
-      }
-      return Math.abs(area);
-    };
-
-    const [quads, metrics] = await Promise.all([
-      this._page._delegate.getContentQuads(this),
-      this._page.mainFrame()._utilityContext().then(utility => utility.evaluate(() => ({ width: innerWidth, height: innerHeight }))),
-    ] as const);
-    if (!quads || !quads.length)
-      return 'error:notvisible';
-
-    // Allow 1x1 elements. Compensate for rounding errors by comparing with 0.99 instead.
-    const filtered = quads.map(quad => intersectQuadWithViewport(quad)).filter(quad => computeQuadArea(quad) > 0.99);
-    if (!filtered.length)
-      return 'error:notinviewport';
-    // Return the middle point of the first quad.
-    const result = { x: 0, y: 0 };
-    for (const point of filtered[0]) {
-      result.x += point.x / 4;
-      result.y += point.y / 4;
-    }
-    compensateHalfIntegerRoundingError(result);
-    return result;
-  }
-
-  private async _offsetPoint(offset: types.Point): Promise<types.Point | 'error:notvisible' | 'error:notconnected'> {
-    const [box, border] = await Promise.all([
-      this.boundingBox(),
-      this.evaluateInUtility(([injected, node]) => injected.getElementBorderWidth(node), {}).catch(e => {}),
-    ]);
-    if (!box || !border)
-      return 'error:notvisible';
-    if (border === 'error:notconnected')
-      return border;
-    // Make point relative to the padding box to align with offsetX/offsetY.
-    return {
-      x: box.x + border.left + offset.x,
-      y: box.y + border.top + offset.y,
-    };
-  }
-
-  async _retryPointerAction(progress: Progress, actionName: string, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>,
-    options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    let retry = 0;
-    // We progressively wait longer between retries, up to 500ms.
-    const waitTime = [0, 20, 100, 100, 500];
-
-    // By default, we scroll with protocol method to reveal the action point.
-    // However, that might not work to scroll from under position:sticky elements
-    // that overlay the target element. To fight this, we cycle through different
-    // scroll alignments. This works in most scenarios.
-    const scrollOptions: (ScrollIntoViewOptions | undefined)[] = [
-      undefined,
-      { block: 'end', inline: 'end' },
-      { block: 'center', inline: 'center' },
-      { block: 'start', inline: 'start' },
-    ];
-
-    while (progress.isRunning()) {
-      if (retry) {
-        progress.log(`retrying ${actionName} action${options.trial ? ' (trial run)' : ''}, attempt #${retry}`);
-        const timeout = waitTime[Math.min(retry - 1, waitTime.length - 1)];
-        if (timeout) {
-          progress.log(`  waiting ${timeout}ms`);
-          const result = await this.evaluateInUtility(([injected, node, timeout]) => new Promise<void>(f => setTimeout(f, timeout)), timeout);
-          if (result === 'error:notconnected')
-            return result;
-        }
-      } else {
-        progress.log(`attempting ${actionName} action${options.trial ? ' (trial run)' : ''}`);
-      }
-      const forceScrollOptions = scrollOptions[retry % scrollOptions.length];
-      const result = await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options);
-      ++retry;
-      if (result === 'error:notvisible') {
-        if (options.force)
-          throw new Error('Element is not visible');
-        progress.log('  element is not visible');
-        continue;
-      }
-      if (result === 'error:notinviewport') {
-        if (options.force)
-          throw new Error('Element is outside of the viewport');
-        progress.log('  element is outside of the viewport');
-        continue;
-      }
-      if (typeof result === 'object' && 'hitTargetDescription' in result) {
-        if (options.force)
-          throw new Error(`Element does not receive pointer events, ${result.hitTargetDescription} intercepts them`);
-        progress.log(`  ${result.hitTargetDescription} intercepts pointer events`);
-        continue;
-      }
-      return result;
-    }
-    return 'done';
-  }
-
-  async _performPointerAction(progress: Progress, actionName: string, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>, forceScrollOptions: ScrollIntoViewOptions | undefined, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notvisible' | 'error:notconnected' | 'error:notinviewport' | { hitTargetDescription: string } | 'done'> {
-    const { force = false, position } = options;
-    if ((options as any).__testHookBeforeStable)
-      await (options as any).__testHookBeforeStable();
-    const result = await this._waitForDisplayedAtStablePosition(progress, force, waitForEnabled);
-    if (result !== 'done')
-      return result;
-    if ((options as any).__testHookAfterStable)
-      await (options as any).__testHookAfterStable();
-
-    progress.log('  scrolling into view if needed');
-    progress.throwIfAborted();  // Avoid action that has side-effects.
-    if (forceScrollOptions) {
-      const scrolled = await this.evaluateInUtility(([injected, node, options]) => {
-        if (node.nodeType === 1 /* Node.ELEMENT_NODE */)
-          (node as Node as Element).scrollIntoView(options);
-      }, forceScrollOptions);
-      if (scrolled === 'error:notconnected')
-        return scrolled;
-    } else {
-      const scrolled = await this._scrollRectIntoViewIfNeeded(position ? { x: position.x, y: position.y, width: 0, height: 0 } : undefined);
-      if (scrolled !== 'done')
-        return scrolled;
-    }
-    progress.log('  done scrolling');
-
-    const maybePoint = position ? await this._offsetPoint(position) : await this._clickablePoint();
-    if (typeof maybePoint === 'string')
-      return maybePoint;
-    const point = roundPoint(maybePoint);
-
-    if (!force) {
-      if ((options as any).__testHookBeforeHitTarget)
-        await (options as any).__testHookBeforeHitTarget();
-      progress.log(`  checking that element receives pointer events at (${point.x},${point.y})`);
-      const hitTargetResult = await this._checkHitTargetAt(point);
-      if (hitTargetResult !== 'done')
-        return hitTargetResult;
-      progress.log(`  element does receive pointer events`);
-    }
-
-    progress.metadata.point = point;
-    if (options.trial)  {
-      progress.log(`  trial ${actionName} has finished`);
-      return 'done';
-    }
-
-    await progress.beforeInputAction(this);
-    await this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
-      if ((options as any).__testHookBeforePointerAction)
-        await (options as any).__testHookBeforePointerAction();
-      progress.throwIfAborted();  // Avoid action that has side-effects.
-      let restoreModifiers: types.KeyboardModifier[] | undefined;
-      if (options && options.modifiers)
-        restoreModifiers = await this._page.keyboard._ensureModifiers(options.modifiers);
-      progress.log(`  performing ${actionName} action`);
-      await action(point);
-      progress.log(`  ${actionName} action done`);
-      progress.log('  waiting for scheduled navigations to finish');
-      if ((options as any).__testHookAfterPointerAction)
-        await (options as any).__testHookAfterPointerAction();
-      if (restoreModifiers)
-        await this._page.keyboard._ensureModifiers(restoreModifiers);
-    }, 'input');
-    progress.log('  navigations have finished');
-
-    return 'done';
+    return controller.run(async progress => {
+      const result = await actions.scrollIntoView(progress, this);
+      assertDone(throwRetargetableDOMError(result));
+    }, this._page._timeoutSettings.timeout(options));
   }
 
   async hover(metadata: CallMetadata, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._hover(progress, options);
+      const result = await actions.hover(progress, this, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
-  }
-
-  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, point => this._page.mouse.move(point.x, point.y), options);
   }
 
   async click(metadata: CallMetadata, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._click(progress, options);
+      const result = await actions.click(progress, this, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
-  }
-
-  _click(progress: Progress, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'click', true /* waitForEnabled */, point => this._page.mouse.click(point.x, point.y, options), options);
   }
 
   async dblclick(metadata: CallMetadata, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._dblclick(progress, options);
+      const result = await actions.dblclick(progress, this, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
-  }
-
-  _dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'dblclick', true /* waitForEnabled */, point => this._page.mouse.dblclick(point.x, point.y, options), options);
   }
 
   async tap(metadata: CallMetadata, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._tap(progress, options);
+      const result = await actions.tap(progress, this, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
-  }
-
-  _tap(progress: Progress, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'tap', true /* waitForEnabled */, point => this._page.touchscreen.tap(point.x, point.y), options);
   }
 
   async selectOption(metadata: CallMetadata, elements: ElementHandle[], values: types.SelectOption[], options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<string[]> {
@@ -668,7 +455,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     };
     if (await isChecked() === state)
       return 'done';
-    const result = await this._click(progress, options);
+    const result = await actions.click(progress, this, options);
     if (result !== 'done')
       return result;
     if (options.trial)
@@ -786,37 +573,6 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     }
     return this;
   }
-
-  async _waitForDisplayedAtStablePosition(progress: Progress, force: boolean, waitForEnabled: boolean): Promise<'error:notconnected' | 'done'> {
-    if (waitForEnabled)
-      progress.log(`  waiting for element to be visible, enabled and stable`);
-    else
-      progress.log(`  waiting for element to be visible and stable`);
-    const result = await this.evaluatePoll(progress, ([injected, node, { waitForEnabled, force }]) => {
-      return injected.waitForElementStatesAndPerformAction(node,
-          waitForEnabled ? ['visible', 'stable', 'enabled'] : ['visible', 'stable'], force, () => 'done' as const);
-    }, { waitForEnabled, force });
-    if (result === 'error:notconnected')
-      return result;
-    if (waitForEnabled)
-      progress.log('  element is visible, enabled and stable');
-    else
-      progress.log('  element is visible and stable');
-    return result;
-  }
-
-  async _checkHitTargetAt(point: types.Point): Promise<'error:notconnected' | { hitTargetDescription: string } | 'done'> {
-    const frame = await this.ownerFrame();
-    if (frame && frame.parentFrame()) {
-      const element = await frame.frameElement();
-      const box = await element.boundingBox();
-      if (!box)
-        return 'error:notconnected';
-      // Translate from viewport coordinates to frame coordinates.
-      point = { x: point.x - box.x, y: point.y - box.y };
-    }
-    return this.evaluateInUtility(([injected, node, point]) => injected.checkHitTargetAt(node, point), point);
-  }
 }
 
 // Handles an InjectedScriptPoll running in injected script:
@@ -893,33 +649,6 @@ export function throwRetargetableDOMError<T>(result: T | 'error:notconnected'): 
 
 export function assertDone(result: 'done'): void {
   // This function converts 'done' to void and ensures typescript catches unhandled errors.
-}
-
-function roundPoint(point: types.Point): types.Point {
-  return {
-    x: (point.x * 100 | 0) / 100,
-    y: (point.y * 100 | 0) / 100,
-  };
-}
-
-function compensateHalfIntegerRoundingError(point: types.Point) {
-  // Firefox internally uses integer coordinates, so 8.5 is converted to 9 when clicking.
-  //
-  // This does not work nicely for small elements. For example, 1x1 square with corners
-  // (8;8) and (9;9) is targeted when clicking at (8;8) but not when clicking at (9;9).
-  // So, clicking at (8.5;8.5) will effectively click at (9;9) and miss the target.
-  //
-  // Therefore, we skew half-integer values from the interval (8.49, 8.51) towards
-  // (8.47, 8.49) that is rounded towards 8. This means clicking at (8.5;8.5) will
-  // be replaced with (8.48;8.48) and will effectively click at (8;8).
-  //
-  // Other browsers use float coordinates, so this change should not matter.
-  const remainderX = point.x - Math.floor(point.x);
-  if (remainderX > 0.49 && remainderX < 0.51)
-    point.x -= 0.02;
-  const remainderY = point.y - Math.floor(point.y);
-  if (remainderY > 0.49 && remainderY < 0.51)
-    point.y -= 0.02;
 }
 
 export type SchedulableTask<T> = (injectedScript: js.JSHandle<InjectedScript>) => Promise<js.JSHandle<InjectedScriptPoll<T>>>;

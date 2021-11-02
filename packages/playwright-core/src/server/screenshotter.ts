@@ -16,6 +16,7 @@
  */
 
 import * as dom from './dom';
+import * as actions from './actions';
 import { helper } from './helper';
 import { Page } from './page';
 import * as types from './types';
@@ -94,7 +95,7 @@ export class Screenshotter {
     return this._queue.postTask(async () => {
       const { viewportSize, originalViewportSize } = await this._originalViewportSize(progress);
 
-      await handle._waitAndScrollIntoViewIfNeeded(progress);
+      dom.assertDone(dom.throwRetargetableDOMError(await actions.scrollIntoView(progress, handle)));
 
       progress.throwIfAborted(); // Do not do extra work.
       let boundingBox = await handle.boundingBox();
@@ -114,7 +115,7 @@ export class Screenshotter {
         progress.cleanupWhenAborted(() => this._restoreViewport(originalViewportSize));
 
         progress.throwIfAborted(); // Avoid extra work.
-        await handle._waitAndScrollIntoViewIfNeeded(progress);
+        dom.assertDone(dom.throwRetargetableDOMError(await actions.scrollIntoView(progress, handle)));
         boundingBox = await handle.boundingBox();
         assert(boundingBox, 'Node is either not visible or not an HTMLElement');
         assert(boundingBox.width !== 0, 'Node has 0 width.');
