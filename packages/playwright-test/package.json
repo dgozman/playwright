@@ -17,7 +17,8 @@
     "./package.json": "./package.json",
     "./lib/cli": "./lib/cli.js",
     "./lib/experimentalLoader": "./lib/experimentalLoader.js",
-    "./reporter": "./reporter.js"
+    "./reporter": "./reporter.js",
+    "./runner": "./runner.js"
   },
   "bin": {
     "playwright": "./cli.js"

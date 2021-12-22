@@ -44,6 +44,7 @@ const readDirAsync = promisify(fs.readdir);
 const readFileAsync = promisify(fs.readFile);
 
 type InternalGlobalSetupFunction = () => Promise<() => Promise<void>>;
+type RunResult = { result: FullResult, config: FullConfig, suite: Suite };
 
 export class Runner {
   private _loader: Loader;
@@ -95,10 +96,10 @@ export class Runner {
     this._internalGlobalSetups.push(internalGlobalSetup);
   }
 
-  async run(list: boolean, filePatternFilters: FilePatternFilter[], projectNames?: string[]): Promise<FullResult> {
+  async run(list: boolean, filePatternFilters: FilePatternFilter[], projectNames?: string[]): Promise<RunResult> {
     this._reporter = await this._createReporter(list);
+    const config = this._loader.fullConfig();
     try {
-      const config = this._loader.fullConfig();
       const globalDeadline = config.globalTimeout ? config.globalTimeout + monotonicTime() : 0;
       const result = await raceAgainstDeadline(this._run(list, filePatternFilters, projectNames), globalDeadline);
       if (result.timedOut) {
@@ -107,7 +108,7 @@ export class Runner {
           await this._reporter.onEnd?.(actualResult);
         else
           this._reporter.onError?.(createStacklessError(`Timed out waiting ${config.globalTimeout / 1000}s for the entire test run`));
-        return actualResult;
+        return { result: actualResult, config, suite: new Suite('') };
       }
       return result.result;
     } catch (e) {
@@ -116,11 +117,11 @@ export class Runner {
         this._reporter.onError?.(serializeError(e));
       } catch (ignored) {
       }
-      return result;
+      return { result, config, suite: new Suite('') };
     }
   }
 
-  async _run(list: boolean, testFileReFilters: FilePatternFilter[], projectNames?: string[]): Promise<FullResult> {
+  async _run(list: boolean, testFileReFilters: FilePatternFilter[], projectNames?: string[]): Promise<RunResult> {
     const testFileFilter = testFileReFilters.length ? createFileMatcher(testFileReFilters.map(e => e.re)) : () => true;
     const config = this._loader.fullConfig();
 
@@ -178,23 +179,20 @@ export class Runner {
     if (config.globalSetup && !list)
       globalSetupResult = await (await this._loader.loadGlobalHook(config.globalSetup, 'globalSetup'))(this._loader.fullConfig());
     try {
-      for (const file of allTestFiles)
-        await this._loader.loadTestFile(file);
-
       const preprocessRoot = new Suite('');
-      for (const fileSuite of this._loader.fileSuites().values())
-        preprocessRoot._addSuite(fileSuite);
+      for (const file of allTestFiles)
+        preprocessRoot._addSuite(await this._loader.loadTestFile(file));
       if (config.forbidOnly) {
         const onlyTestsAndSuites = preprocessRoot._getOnlyItems();
         if (onlyTestsAndSuites.length > 0) {
           this._reporter.onError?.(createForbidOnlyError(config, onlyTestsAndSuites));
-          return { status: 'failed' };
+          return { result: { status: 'failed' }, config, suite: new Suite('') };
         }
       }
       const clashingTests = getClashingTestsPerSuite(preprocessRoot);
       if (clashingTests.size > 0) {
         this._reporter.onError?.(createDuplicateTitlesError(config, clashingTests));
-        return { status: 'failed' };
+        return { result: { status: 'failed' }, config, suite: new Suite('') };
       }
       filterOnly(preprocessRoot);
       filterByFocusedLine(preprocessRoot, testFileReFilters);
@@ -232,7 +230,7 @@ export class Runner {
       let total = rootSuite.allTests().length;
       if (!total) {
         this._reporter.onError?.(createNoTestsError());
-        return { status: 'failed' };
+        return { result: { status: 'failed' }, config, suite: rootSuite };
       }
 
       await Promise.all(Array.from(outputDirs).map(outputDir => removeFolderAsync(outputDir).catch(e => {})));
@@ -312,13 +310,13 @@ export class Runner {
       if (sigint) {
         const result: FullResult = { status: 'interrupted' };
         await this._reporter.onEnd?.(result);
-        return result;
+        return { result, config, suite: rootSuite };
       }
 
       const failed = hasWorkerErrors || rootSuite.allTests().some(test => !test.ok());
       const result: FullResult = { status: failed ? 'failed' : 'passed' };
       await this._reporter.onEnd?.(result);
-      return result;
+      return { result, config, suite: rootSuite };
     } finally {
       if (globalSetupResult && typeof globalSetupResult === 'function')
         await globalSetupResult(this._loader.fullConfig());

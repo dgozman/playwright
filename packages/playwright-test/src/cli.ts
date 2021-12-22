@@ -34,14 +34,6 @@ const defaultReporter: BuiltInReporter = process.env.CI ? 'dot' : 'list';
 const tsConfig = 'playwright.config.ts';
 const jsConfig = 'playwright.config.js';
 const mjsConfig = 'playwright.config.mjs';
-const defaultConfig: Config = {
-  preserveOutput: 'always',
-  reporter: [ [defaultReporter] ],
-  reportSlowTests: { max: 5, threshold: 15000 },
-  timeout: defaultTimeout,
-  updateSnapshots: 'missing',
-  workers: Math.ceil(require('os').cpus().length / 2),
-};
 
 export function addTestCommand(program: Command) {
   const command = program.command('test [test-filter...]');
@@ -69,7 +61,7 @@ export function addTestCommand(program: Command) {
   command.option('-x', `Stop after the first failure`);
   command.action(async (args, opts) => {
     try {
-      await runTests(args, opts);
+      await runTestsFromArgs(args, opts);
     } catch (e) {
       console.error(e);
       process.exit(1);
@@ -98,11 +90,27 @@ Examples:
   $ npx playwright show-report playwright-report`);
 }
 
-async function createLoader(opts: { [key: string]: any }): Promise<Loader> {
-  if (opts.browser) {
-    const browserOpt = opts.browser.toLowerCase();
+type RunOptions = {
+  config?: string;
+  headed?: boolean;
+  browser?: string;
+  list?: boolean;
+  project?: string[];
+};
+// Note: this function is consumed by "@playwright/test/runner" api.
+export async function runTests(overrides: Config, options: RunOptions, filePatterns: string[]) {
+  const defaultConfig: Config = {
+    preserveOutput: 'always',
+    reporter: [ [defaultReporter] ],
+    reportSlowTests: { max: 5, threshold: 15000 },
+    timeout: defaultTimeout,
+    updateSnapshots: 'missing',
+    workers: Math.ceil(require('os').cpus().length / 2),
+  };
+  if (options.browser) {
+    const browserOpt = options.browser.toLowerCase();
     if (!['all', 'chromium', 'firefox', 'webkit'].includes(browserOpt))
-      throw new Error(`Unsupported browser "${opts.browser}", must be one of "all", "chromium", "firefox" or "webkit"`);
+      throw new Error(`Unsupported browser "${options.browser}", must be one of "all", "chromium", "firefox" or "webkit"`);
     const browserNames = browserOpt === 'all' ? ['chromium', 'firefox', 'webkit'] : [browserOpt];
     defaultConfig.projects = browserNames.map(browserName => {
       return {
@@ -112,16 +120,6 @@ async function createLoader(opts: { [key: string]: any }): Promise<Loader> {
     });
   }
 
-  const overrides = overridesFromOptions(opts);
-  if (opts.headed || opts.debug)
-    overrides.use = { headless: false };
-  if (opts.debug) {
-    overrides.maxFailures = 1;
-    overrides.timeout = 0;
-    overrides.workers = 1;
-    process.env.PWDEBUG = '1';
-  }
-
   const loader = new Loader(defaultConfig, overrides);
 
   async function loadConfig(configFile: string) {
@@ -129,7 +127,7 @@ async function createLoader(opts: { [key: string]: any }): Promise<Loader> {
       if (process.stdout.isTTY)
         console.log(`Using config at ` + configFile);
       const loadedConfig = await loader.loadConfigFile(configFile);
-      if (('projects' in loadedConfig) && opts.browser)
+      if (('projects' in loadedConfig) && options.browser)
         throw new Error(`Cannot use --browser option when configuration file defines projects. Specify browserName in the projects instead.`);
       return true;
     }
@@ -145,10 +143,10 @@ async function createLoader(opts: { [key: string]: any }): Promise<Loader> {
     return false;
   }
 
-  if (opts.config) {
-    const configFile = path.resolve(process.cwd(), opts.config);
+  if (options.config) {
+    const configFile = path.resolve(process.cwd(), options.config);
     if (!fs.existsSync(configFile))
-      throw new Error(`${opts.config} does not exist`);
+      throw new Error(`${options.config} does not exist`);
     if (fs.statSync(configFile).isDirectory()) {
       // When passed a directory, look for a config file inside.
       if (!await loadConfigFromDirectory(configFile)) {
@@ -164,14 +162,8 @@ async function createLoader(opts: { [key: string]: any }): Promise<Loader> {
     // If not, scan the world.
     loader.loadEmptyConfig(process.cwd());
   }
-  return loader;
-}
 
-async function runTests(args: string[], opts: { [key: string]: any }) {
-  await startProfiling();
-
-  const loader = await createLoader(opts);
-  const filePatternFilters: FilePatternFilter[] = args.map(arg => {
+  const filePatternFilters: FilePatternFilter[] = filePatterns.map(arg => {
     const match = /^(.*):(\d+)$/.exec(arg);
     return {
       re: forceRegExp(match ? match[1] : arg),
@@ -182,14 +174,40 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
   const runner = new Runner(loader);
   if (process.env.PLAYWRIGHT_DOCKER)
     runner.addInternalGlobalSetup(launchDockerContainer);
-  const result = await runner.run(!!opts.list, filePatternFilters, opts.project || undefined);
-  await stopProfiling(undefined);
+  const result = await runner.run(!!options.list, filePatternFilters, options.project || undefined);
 
   // Calling process.exit() might truncate large stdout/stderr output.
   // See https://github.com/nodejs/node/issues/6456.
   // See https://github.com/nodejs/node/issues/12921
   await new Promise<void>(resolve => process.stdout.write('', () => resolve()));
   await new Promise<void>(resolve => process.stderr.write('', () => resolve()));
+
+  return result;
+}
+
+async function runTestsFromArgs(args: string[], opts: { [key: string]: any }) {
+  await startProfiling();
+
+  const overrides = overridesFromOptions(opts);
+  if (opts.headed || opts.debug)
+    overrides.use = { headless: false };
+  if (opts.debug) {
+    overrides.maxFailures = 1;
+    overrides.timeout = 0;
+    overrides.workers = 1;
+    process.env.PWDEBUG = '1';
+  }
+
+  const options: RunOptions = {
+    config: opts.config,
+    headed: opts.headed,
+    browser: opts.browser,
+    list: opts.list,
+    project: opts.project,
+  };
+
+  const { result } = await runTests(overrides, options, args);
+  await stopProfiling(undefined);
 
   if (result.status === 'interrupted')
     process.exit(130);
