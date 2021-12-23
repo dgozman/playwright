@@ -157,7 +157,14 @@ export interface FullConfig<TestArgs = {}, WorkerArgs = {}> {
 
 export type TestStatus = 'passed' | 'failed' | 'timedOut' | 'skipped';
 
+export interface Location {
+  file: string;
+  line: number;
+  column: number;
+}
+
 export interface TestError {
+  location?: Location;
   message?: string;
   stack?: string;
   value?: string;

@@ -3,6 +3,11 @@
 
 Information about an error thrown during test execution.
 
+## property: TestError.location
+- type: <[void]|[Location]>
+
+Error location in the test code. Useful for error snippets and highlighting.
+
 ## property: TestError.message
 - type: <[void]|[string]>
 

@@ -17,7 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { FullConfig, TestCase, Suite, TestResult, TestError, TestStep, FullResult, TestStatus, Location, Reporter } from '../../types/testReporter';
-import { PositionInFile, prepareErrorStack } from './base';
+import { PositionInFile } from './base';
 
 export interface JSONReport {
   config: Omit<FullConfig, 'projects'> & {
@@ -252,13 +252,8 @@ class JSONReporter implements Reporter {
         body: a.body?.toString('base64')
       })),
     };
-    if (result.error?.stack) {
-      const { position } = prepareErrorStack(
-          result.error.stack,
-          file
-      );
-      if (position)
-        jsonResult.errorLocation = position;
+    if (result.error?.location) {
+      jsonResult.errorLocation = { line: result.error.location.line, column: result.error.location.column };
     }
     return jsonResult;
   }

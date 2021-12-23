@@ -19,10 +19,7 @@ import colors from 'colors/safe';
 import fs from 'fs';
 import milliseconds from 'ms';
 import path from 'path';
-import StackUtils from 'stack-utils';
-import { FullConfig, TestCase, Suite, TestResult, TestError, Reporter, FullResult, TestStep } from '../../types/testReporter';
-
-const stackUtils = new StackUtils();
+import { FullConfig, TestCase, Suite, TestResult, TestError, Reporter, FullResult, TestStep, Location } from '../../types/testReporter';
 
 export type TestResultOutput = { chunk: string | Buffer, type: 'stdout' | 'stderr' };
 export const kOutputSymbol = Symbol('output');
@@ -32,17 +29,17 @@ type Annotation = {
   filePath: string;
   title: string;
   message: string;
-  position?: PositionInFile;
+  location?: Location;
 };
 
 type FailureDetails = {
   tokens: string[];
-  position?: PositionInFile;
+  location?: Location;
 };
 
 type ErrorDetails = {
   message: string;
-  position?: PositionInFile;
+  location?: Location;
 };
 
 type TestSummary = {
@@ -236,7 +233,7 @@ export function formatFailure(config: FullConfig, test: TestCase, options: {inde
   lines.push(colors.red(header));
   for (const result of test.results) {
     const resultLines: string[] = [];
-    const { tokens: resultTokens, position } = formatResultFailure(test, result, '    ', colors.enabled);
+    const { tokens: resultTokens, location } = formatResultFailure(test, result, '    ', colors.enabled);
     if (!resultTokens.length)
       continue;
     if (result.retry) {
@@ -284,7 +281,7 @@ export function formatFailure(config: FullConfig, test: TestCase, options: {inde
     if (filePath) {
       annotations.push({
         filePath,
-        position,
+        location,
         title,
         message: [header, ...resultLines].join('\n'),
       });
@@ -315,7 +312,7 @@ export function formatResultFailure(test: TestCase, result: TestResult, initialI
   }
   return {
     tokens: resultTokens,
-    position: error?.position,
+    location: error?.location,
   };
 }
 
@@ -343,31 +340,42 @@ function formatTestHeader(config: FullConfig, test: TestCase, indent: string, in
 }
 
 export function formatError(error: TestError, highlightCode: boolean, file?: string): ErrorDetails {
-  const stack = error.stack;
-  const tokens = [''];
-  let positionInFile: PositionInFile | undefined;
-  if (stack) {
-    const { message, stackLines, position } = prepareErrorStack(
-        stack,
-        file
-    );
-    positionInFile = position;
-    tokens.push(message);
+  let message: string;
+  let stack: string | undefined;
+  if (error.stack) {
+    const lines = error.stack.split('\n');
+    let firstStackLine = lines.findIndex(line => line.startsWith('    at '));
+    if (firstStackLine === -1) firstStackLine = lines.length;
+    message = lines.slice(0, firstStackLine).join('\n');
+    stack = lines.slice(firstStackLine).join('\n');
+  } else {
+    message = error.message === undefined ? (error.value || '') : error.message;
+    if (error.location)
+      stack = `    at ${error.location.file}:${error.location.line}:${error.location.column}`;
+  }
 
-    const codeFrame = generateCodeFrame({ highlightCode }, file, position);
+  const tokens = [''];
+  tokens.push(message);
+
+  if (error.location) {
+    const codeFrame = generateCodeFrame({ highlightCode }, error.location);
     if (codeFrame) {
+      if (error.location.file !== file) {
+        tokens.push('');
+        tokens.push(colors.gray(`   at `) + `${relativeFilePath(error.location.file)}:${error.location.line}`);
+      }
       tokens.push('');
       tokens.push(codeFrame);
     }
-    tokens.push('');
-    tokens.push(colors.dim(stackLines.join('\n')));
-  } else if (error.message) {
-    tokens.push(error.message);
-  } else if (error.value) {
-    tokens.push(error.value);
   }
+
+  if (stack) {
+    tokens.push('');
+    tokens.push(colors.dim(stack));
+  }
+
   return {
-    position: positionInFile,
+    location: error.location,
     message: tokens.join('\n'),
   };
 }
@@ -382,48 +390,9 @@ function indent(lines: string, tab: string) {
   return lines.replace(/^(?=.+$)/gm, tab);
 }
 
-export function generateCodeFrame(options: BabelCodeFrameOptions, file?: string, position?: PositionInFile): string | undefined {
-  if (!position || !file)
-    return;
-
-  const source = fs.readFileSync(file!, 'utf8');
-  const codeFrame = codeFrameColumns(
-      source,
-      { start: position },
-      options
-  );
-
-  return codeFrame;
-}
-
-export function prepareErrorStack(stack: string, file?: string): {
-  message: string;
-  stackLines: string[];
-  position?: PositionInFile;
-} {
-  const lines = stack.split('\n');
-  let firstStackLine = lines.findIndex(line => line.startsWith('    at '));
-  if (firstStackLine === -1) firstStackLine = lines.length;
-  const message = lines.slice(0, firstStackLine).join('\n');
-  const stackLines = lines.slice(firstStackLine);
-  const position = file ? positionInFile(stackLines, file) : undefined;
-  return {
-    message,
-    stackLines,
-    position,
-  };
-}
-
-function positionInFile(stackLines: string[], file: string): PositionInFile | undefined {
-  // Stack will have /private/var/folders instead of /var/folders on Mac.
-  file = fs.realpathSync(file);
-  for (const line of stackLines) {
-    const parsed = stackUtils.parseLine(line);
-    if (!parsed || !parsed.file)
-      continue;
-    if (path.resolve(process.cwd(), parsed.file) === file)
-      return { column: parsed.column || 0, line: parsed.line || 0 };
-  }
+function generateCodeFrame(options: BabelCodeFrameOptions, location: Location): string | undefined {
+  const source = fs.readFileSync(location.file, 'utf8');
+  return codeFrameColumns(source, { start: location }, options);
 }
 
 function monotonicTime(): number {
@@ -453,4 +422,10 @@ export function fitToScreen(line: string, width: number, suffix?: string): strin
   }
   // Truncate and reset all colors.
   return line.substr(0, width + ansiLen) + '\u001b[0m';
+}
+
+function relativeFilePath(file: string): string {
+  if (!path.isAbsolute(file))
+    return file;
+  return path.relative(process.cwd(), file);
 }

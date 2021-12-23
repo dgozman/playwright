@@ -21,7 +21,7 @@ import * as mime from 'mime';
 import util from 'util';
 import colors from 'colors/safe';
 import { EventEmitter } from 'events';
-import { monotonicTime, serializeError, sanitizeForFilePath, getContainedPath, addSuffixToFilePath, prependToTestError, trimLongString, formatLocation } from './util';
+import { monotonicTime, sanitizeForFilePath, getContainedPath, addSuffixToFilePath, prependToTestError, trimLongString, serializeErrorWithLocation } from './util';
 import { TestBeginPayload, TestEndPayload, RunPayload, TestEntry, DonePayload, WorkerInitParams, StepBeginPayload, StepEndPayload } from './ipc';
 import { setCurrentTestInfo } from './globals';
 import { Loader } from './loader';
@@ -105,12 +105,12 @@ export class WorkerRunner extends EventEmitter {
     if (this._currentTest && this._currentTest.type === 'test' && this._currentTest.testInfo.expectedStatus !== 'failed') {
       if (!this._currentTest.testInfo.error) {
         this._currentTest.testInfo.status = 'failed';
-        this._currentTest.testInfo.error = serializeError(error);
+        this._currentTest.testInfo.error = serializeErrorWithLocation(error);
       }
     } else {
       // No current test - fatal error.
       if (!this._fatalError)
-        this._fatalError = serializeError(error);
+        this._fatalError = serializeErrorWithLocation(error);
     }
     this.stop();
   }
@@ -192,7 +192,7 @@ export class WorkerRunner extends EventEmitter {
       const result = await raceAgainstDeadline(this._fixtureRunner.resolveParametersAndRunHookOrTest(beforeAllModifier.fn, this._workerInfo, undefined), this._deadline());
       if (result.timedOut) {
         if (!this._fatalError)
-          this._fatalError = serializeError(new Error(`Timeout of ${this._project.config.timeout}ms exceeded while running ${beforeAllModifier.type} modifier\n    at ${formatLocation(beforeAllModifier.location)}`));
+          this._fatalError = { message: `Timeout of ${this._project.config.timeout}ms exceeded while running ${beforeAllModifier.type} modifier`, location: beforeAllModifier.location };
         this.stop();
       } else if (!!result.result) {
         annotations.push({ type: beforeAllModifier.type, description: beforeAllModifier.description });
@@ -345,7 +345,7 @@ export class WorkerRunner extends EventEmitter {
               return;
             callbackHandled = true;
             if (error instanceof Error)
-              error = serializeError(error);
+              error = serializeErrorWithLocation(error);
             const payload: StepEndPayload = {
               testId,
               stepId,
@@ -451,7 +451,7 @@ export class WorkerRunner extends EventEmitter {
           this._fatalError = testInfo.error;
         // Keep any error we have, and add "timeout" message.
         if (testInfo.status === 'timedOut')
-          this._fatalError = prependToTestError(this._fatalError, colors.red(`Timeout of ${testInfo.timeout}ms exceeded in ${test._type} hook.\n`), test.location);
+          this._fatalError = prependToTestError(this._fatalError, colors.red(`Timeout of ${testInfo.timeout}ms exceeded in ${test._type} hook.`) + '\n', test.location);
       }
       this.stop();
     } else {
@@ -487,7 +487,7 @@ export class WorkerRunner extends EventEmitter {
         // Do not overwrite any uncaught error that happened first.
         // This is typical if you have some expect() that fails in beforeEach.
         if (!('error' in testInfo))
-          testInfo.error = serializeError(error);
+          testInfo.error = serializeErrorWithLocation(error);
       }
       // Continue running afterEach hooks even after the failure.
     }
@@ -522,7 +522,7 @@ export class WorkerRunner extends EventEmitter {
           testInfo.status = 'failed';
         // Keep the error even in the case of timeout, if there was no error before.
         if (!('error' in  testInfo))
-          testInfo.error = serializeError(error);
+          testInfo.error = serializeErrorWithLocation(error);
       }
     } finally {
       step.complete(testInfo.error);
@@ -547,7 +547,7 @@ export class WorkerRunner extends EventEmitter {
           testInfo.status = 'failed';
         // Do not overwrite test failure error.
         if (!('error' in  testInfo))
-          testInfo.error = serializeError(error);
+          testInfo.error = serializeErrorWithLocation(error);
         // Continue running even after the failure.
       }
     }
@@ -558,7 +558,7 @@ export class WorkerRunner extends EventEmitter {
         testInfo.status = 'failed';
       // Do not overwrite test failure error.
       if (!('error' in  testInfo)) {
-        testInfo.error = serializeError(error);
+        testInfo.error = serializeErrorWithLocation(error);
         teardownError = testInfo.error;
       }
     }

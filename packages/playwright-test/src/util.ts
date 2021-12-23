@@ -21,17 +21,42 @@ import type { TestError, Location } from './types';
 import { default as minimatch } from 'minimatch';
 import debug from 'debug';
 import { calculateSha1, isRegExp } from 'playwright-core/lib/utils/utils';
+import StackUtils from 'stack-utils';
 
-export function serializeError(error: Error | any): TestError {
+const stackUtils = new StackUtils({ cwd: '__impossible__directory__to__force__absolute__paths__' });
+
+interface ErrorWithLocation extends Error {
+  location: Location;
+}
+
+export function serializeError(error: Error | any, forceLocation?: boolean): TestError {
   if (error instanceof Error) {
     return {
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
+      location: determineErrorLocation(error, !!forceLocation),
     };
   }
   return {
     value: util.inspect(error)
   };
+}
+
+function determineErrorLocation(error: Error, force: boolean) {
+  if ((error as ErrorWithLocation).location)
+    return (error as ErrorWithLocation).location;
+  if (!force)
+    return;
+  const lines = (error.stack || '').split('\n');
+  const firstStackLine = lines.find(line => line.startsWith('    at '));
+  const parsed = firstStackLine === undefined ? null : stackUtils.parseLine(firstStackLine);
+  if (!parsed || !parsed.file)
+    return;
+  return { file: parsed.file, line: parsed.line || 0, column: parsed.column || 0 };
+}
+
+export function serializeErrorWithLocation(error: Error | any): TestError {
+  return serializeError(error, true);
 }
 
 export function monotonicTime(): number {
@@ -117,7 +142,7 @@ export function forceRegExp(pattern: string): RegExp {
   return new RegExp(pattern, 'g');
 }
 
-export function relativeFilePath(file: string): string {
+function relativeFilePath(file: string): string {
   if (!path.isAbsolute(file))
     return file;
   return path.relative(process.cwd(), file);
@@ -132,7 +157,9 @@ export function errorWithFile(file: string, message: string) {
 }
 
 export function errorWithLocation(location: Location, message: string) {
-  return new Error(`${formatLocation(location)}: ${message}`);
+  const e = new Error(message);
+  (e as ErrorWithLocation).location = location;
+  return e;
 }
 
 export function expectType(receiver: any, type: string, matcherName: string) {
@@ -176,14 +203,8 @@ export const debugTest = debug('pw:test');
 export function prependToTestError(testError: TestError | undefined, message: string | undefined, location?: Location) {
   if (!message)
     return testError;
-  if (!testError) {
-    if (!location)
-      return { value: message };
-    let stack = `    at ${location.file}:${location.line}:${location.column}`;
-    if (!message.endsWith('\n'))
-      stack = '\n' + stack;
-    return { message: message, stack: message + stack };
-  }
+  if (!testError)
+    return { value: message.endsWith('\n') ? message.substring(0, message.length - 1) : message, location };
   if (testError.message) {
     const stack = testError.stack ? message + testError.stack : testError.stack;
     message = message + testError.message;

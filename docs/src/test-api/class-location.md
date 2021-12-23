@@ -1,7 +1,7 @@
 # class: Location
 * langs: js
 
-Represents a location in the source code where [TestCase] or [Suite] is defined.
+Represents a location in the source code.
 
 ## property: Location.file
 - type: <[string]>

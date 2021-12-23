@@ -15,26 +15,8 @@
  * limitations under the License.
  */
 
-import type { FullConfig, FullProject, TestStatus, TestError } from './test';
-export type { FullConfig, TestStatus, TestError } from './test';
-
-/**
- * Represents a location in the source code where [TestCase] or [Suite] is defined.
- */
-export interface Location {
-  /**
-   * Path to the source file.
-   */
-  file: string;
-  /**
-   * Line number in the source file.
-   */
-  line: number;
-  /**
-   * Column number in the source file.
-   */
-  column: number;
-}
+import type { FullConfig, FullProject, TestStatus, TestError, Location } from './test';
+export type { FullConfig, TestStatus, TestError, Location } from './test';
 
 /**
  * `Suite` is a group of tests. All tests in Playwright Test form the following hierarchy:

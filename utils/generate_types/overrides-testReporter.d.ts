@@ -14,14 +14,8 @@
  * limitations under the License.
  */
 
-import type { FullConfig, FullProject, TestStatus, TestError } from './test';
-export type { FullConfig, TestStatus, TestError } from './test';
-
-export interface Location {
-  file: string;
-  line: number;
-  column: number;
-}
+import type { FullConfig, FullProject, TestStatus, TestError, Location } from './test';
+export type { FullConfig, TestStatus, TestError, Location } from './test';
 
 export interface Suite {
   parent?: Suite;

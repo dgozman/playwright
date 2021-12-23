@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { formatLocation, wrapInPromise, debugTest } from './util';
+import { formatLocation, wrapInPromise, debugTest, errorWithLocation } from './util';
 import * as crypto from 'crypto';
 import { FixturesWithLocation, Location, WorkerInfo, TestInfo, TestStepInternal } from './types';
 import { ManualPromise } from 'playwright-core/lib/utils/async';
@@ -384,5 +384,7 @@ function errorWithLocations(message: string, ...defined: { location: Location, n
       prefix = `"${name}" `;
     message += `\n  ${prefix}defined at ${formatLocation(location)}`;
   }
+  if (defined[0])
+    return errorWithLocation(defined[0].location, message);
   return new Error(message);
 }

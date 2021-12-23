@@ -47,7 +47,7 @@ import { toMatchSnapshot } from './matchers/toMatchSnapshot';
 import type { Expect, TestError } from './types';
 import matchers from 'expect/build/matchers';
 import { currentTestInfo } from './globals';
-import { serializeError } from './util';
+import { serializeErrorWithLocation } from './util';
 import StackUtils from 'stack-utils';
 
 const stackUtils = new StackUtils();
@@ -151,7 +151,7 @@ function wrap(matcherName: string, matcher: any) {
     };
 
     const reportStepError = (error: Error) => {
-      step.complete(serializeError(error));
+      step.complete(serializeErrorWithLocation(error));
       throw error;
     };
 

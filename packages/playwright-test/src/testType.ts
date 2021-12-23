@@ -19,7 +19,7 @@ import { currentlyLoadingFileSuite, currentTestInfo, setCurrentlyLoadingFileSuit
 import { TestCase, Suite } from './test';
 import { wrapFunctionWithLocation } from './transform';
 import { Fixtures, FixturesWithLocation, Location, TestType } from './types';
-import { errorWithLocation, serializeError } from './util';
+import { errorWithLocation, serializeErrorWithLocation } from './util';
 
 const testTypeSymbol = Symbol('testType');
 
@@ -196,7 +196,7 @@ export class TestTypeImpl {
       await body();
       step.complete();
     } catch (e) {
-      step.complete(serializeError(e));
+      step.complete(serializeErrorWithLocation(e));
       throw e;
     }
   }

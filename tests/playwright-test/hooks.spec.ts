@@ -470,6 +470,9 @@ test('afterAll timeout should be reported', async ({ runInlineTest }, testInfo) 
     '%%afterAll',
   ]);
   expect(result.output).toContain('Timeout of 1000ms exceeded in afterAll hook.');
+  expect(stripAscii(result.output)).toContain(`   at a.test.js:6`);
+  expect(stripAscii(result.output)).toContain(`  5 |       const { test } = pwt;`);
+  expect(stripAscii(result.output)).toContain(`> 6 |       test.afterAll(async () => {`);
   expect(result.output).toContain(`at ${testInfo.outputPath('a.test.js')}:6:12`);
 });
 

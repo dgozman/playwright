@@ -1105,9 +1105,31 @@ export interface FullConfig<TestArgs = {}, WorkerArgs = {}> {
 export type TestStatus = 'passed' | 'failed' | 'timedOut' | 'skipped';
 
 /**
+ * Represents a location in the source code.
+ */
+export interface Location {
+  /**
+   * Path to the source file.
+   */
+  file: string;
+  /**
+   * Line number in the source file.
+   */
+  line: number;
+  /**
+   * Column number in the source file.
+   */
+  column: number;
+}
+
+/**
  * Information about an error thrown during test execution.
  */
 export interface TestError {
+  /**
+   * Error location in the test code. Useful for error snippets and highlighting.
+   */
+  location?: Location;
   /**
    * Error message. Set when [Error] (or its subclass) has been thrown.
    */

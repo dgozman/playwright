@@ -107,14 +107,14 @@ export class GitHubReporter extends BaseReporter {
         includeStdio: true,
         includeAttachments: false,
       });
-      annotations.forEach(({ filePath, title, message, position }) => {
+      annotations.forEach(({ filePath, title, message, location }) => {
         const options: GitHubLogOptions = {
           file: filePath,
           title,
         };
-        if (position) {
-          options.line = position.line;
-          options.col = position.column;
+        if (location) {
+          options.line = location.line;
+          options.col = location.column;
         }
         this.githubLogger.error(message, options);
       });
