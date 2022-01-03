@@ -44,15 +44,15 @@ export class TestTypeImpl {
     test.afterEach = wrapFunctionWithLocation(this._hook.bind(this, 'afterEach'));
     test.beforeAll = wrapFunctionWithLocation(this._hook.bind(this, 'beforeAll'));
     test.afterAll = wrapFunctionWithLocation(this._hook.bind(this, 'afterAll'));
-    test.skip = wrapFunctionWithLocation(this._modifier.bind(this, 'skip'));
-    test.fixme = wrapFunctionWithLocation(this._modifier.bind(this, 'fixme'));
-    test.fail = wrapFunctionWithLocation(this._modifier.bind(this, 'fail'));
-    test.slow = wrapFunctionWithLocation(this._modifier.bind(this, 'slow'));
-    test.setTimeout = wrapFunctionWithLocation(this._setTimeout.bind(this));
-    test.step = wrapFunctionWithLocation(this._step.bind(this));
-    test.use = wrapFunctionWithLocation(this._use.bind(this));
-    test.extend = wrapFunctionWithLocation(this._extend.bind(this));
-    test.extendTest = wrapFunctionWithLocation(this._extendTest.bind(this));
+    test.skip = wrapFunctionWithLocation(this._modifier.bind(this, 'skip'), true /* forceTopFrame */);
+    test.fixme = wrapFunctionWithLocation(this._modifier.bind(this, 'fixme'), true /* forceTopFrame */);
+    test.fail = wrapFunctionWithLocation(this._modifier.bind(this, 'fail'), true /* forceTopFrame */);
+    test.slow = wrapFunctionWithLocation(this._modifier.bind(this, 'slow'), true /* forceTopFrame */);
+    test.setTimeout = wrapFunctionWithLocation(this._setTimeout.bind(this), true /* forceTopFrame */);
+    test.step = wrapFunctionWithLocation(this._step.bind(this), true /* forceTopFrame */);
+    test.use = wrapFunctionWithLocation(this._use.bind(this), true /* forceTopFrame */);
+    test.extend = wrapFunctionWithLocation(this._extend.bind(this), true /* forceTopFrame */);
+    test.extendTest = wrapFunctionWithLocation(this._extendTest.bind(this), true /* forceTopFrame */);
     test.info = () => {
       const result = currentTestInfo();
       if (!result)

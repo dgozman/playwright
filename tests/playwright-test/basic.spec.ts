@@ -283,9 +283,13 @@ test('should work with test wrapper', async ({ runInlineTest }) => {
         });
       });
     `,
-  }, { workers: 1, reporter: 'line' });
+  }, { workers: 1, reporter: 'list' });
   expect(result.passed).toBe(4);
   expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('a.spec.js:7:7 › test1');
+  expect(result.output).toContain('a.spec.js:11:9 › suite1 › suite1.test1');
+  expect(result.output).toContain('b.spec.js:7:7 › test2');
+  expect(result.output).toContain('b.spec.js:11:9 › suite2 › suite2.test2');
   expect(stripAscii(result.output).split('\n').filter(line => line.startsWith('%%'))).toEqual([
     '%%a.spec',
     '%%helper',
@@ -332,9 +336,13 @@ test('should work with test helper', async ({ runInlineTest }) => {
       console.log('%%b.spec');
       require('./helper-b');
     `,
-  }, { workers: 1, reporter: 'line' });
+  }, { workers: 1, reporter: 'list' });
   expect(result.passed).toBe(4);
   expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('helper-a.js:5:11 › test1');
+  expect(result.output).toContain('helper-a.js:9:13 › suite1 › suite1.test1');
+  expect(result.output).toContain('helper-b.js:5:11 › test1');
+  expect(result.output).toContain('helper-b.js:9:13 › suite2 › suite2.test2');
   expect(stripAscii(result.output).split('\n').filter(line => line.startsWith('%%'))).toEqual([
     '%%a.spec',
     '%%helper-a',
@@ -348,6 +356,81 @@ test('should work with test helper', async ({ runInlineTest }) => {
     '%%helper-b',
     '%%test2',
     '%%suite2.test2',
+  ]);
+});
+
+test('should work with test list file', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'file-a.js': `
+      pwt.test('test1', () => {
+        console.log('%%test1');
+      });
+      pwt.test.describe('suite1', () => {
+        pwt.test('suite1.test1', () => {
+          console.log('%%suite1.test1');
+        });
+      });
+    `,
+    'file-b.js': `
+      pwt.test('test2', () => {
+        console.log('%%test2');
+      });
+      pwt.test.describe('suite2', () => {
+        pwt.test('suite2.test2', () => {
+          console.log('%%suite2.test2');
+        });
+      });
+    `,
+    'test-list.spec.js': `
+      require('./file-b');
+      require('./file-a');
+    `,
+  }, { workers: 1, reporter: 'list' });
+  expect(result.passed).toBe(4);
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('file-b.js:4:11 › test2');
+  expect(result.output).toContain('file-b.js:8:13 › suite2 › suite2.test2');
+  expect(result.output).toContain('file-a.js:4:11 › test1');
+  expect(result.output).toContain('file-a.js:8:13 › suite1 › suite1.test1');
+  expect(stripAscii(result.output).split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%test2',
+    '%%suite2.test2',
+    '%%test1',
+    '%%suite1.test1',
+  ]);
+});
+
+test('should work with test list helper', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'helper.js': `
+      module.exports = (params, cb) => {
+        params.forEach(p => pwt.test('test ' + p, () => cb(p)));
+      };
+    `,
+    'a.spec.js': `
+      const list = require('./helper');
+      list([1, 2], param => {
+        console.log('%%got ' + param);
+      });
+    `,
+    'b.spec.js': `
+      const list = require('./helper');
+      list([3, 4], param => {
+        console.log('%%got ' + param);
+      });
+    `,
+  }, { workers: 1, reporter: 'list' });
+  expect(result.passed).toBe(4);
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain('a.spec.js:6:7 › test 1');
+  expect(result.output).toContain('a.spec.js:6:7 › test 2');
+  expect(result.output).toContain('b.spec.js:6:7 › test 3');
+  expect(result.output).toContain('b.spec.js:6:7 › test 4');
+  expect(stripAscii(result.output).split('\n').filter(line => line.startsWith('%%'))).toEqual([
+    '%%got 1',
+    '%%got 2',
+    '%%got 3',
+    '%%got 4',
   ]);
 });
 

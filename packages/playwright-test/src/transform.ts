@@ -27,6 +27,7 @@ import { TsConfigLoaderResult } from './third_party/tsconfig-loader';
 const version = 5;
 const cacheDir = process.env.PWTEST_CACHE_DIR || path.join(os.tmpdir(), 'playwright-transform-cache');
 const sourceMaps: Map<string, string> = new Map();
+const kFrameworkDir = path.resolve(__dirname);
 
 const kStackTraceLimit = 15;
 Error.stackTraceLimit = kStackTraceLimit;
@@ -136,11 +137,35 @@ export function installTransform(tsconfig: TsConfigLoaderResult): () => void {
   return pirates.addHook((code: string, filename: string) => transformHook(code, filename, tsconfig), { exts: ['.ts', '.tsx'] });
 }
 
-export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Location, ...args: A) => R): (...args: A) => R {
+export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Location, ...args: A) => R, forceTopFrame?: boolean): (...args: A) => R {
   return (...args) => {
     const oldPrepareStackTrace = Error.prepareStackTrace;
     Error.prepareStackTrace = (error, stackFrames) => {
-      const frame: NodeJS.CallSite = sourceMapSupport.wrapCallSite(stackFrames[1]);
+      // We use the top frame that comes directly after this anonymous function.
+      let targetFrame = 1;
+
+      // Heuristic to determine the test location: take the last location before a require or a framework call.
+      // Covers multiple usecases:
+      // - a test wrapper like myTestWrapper('foo', () => {}) that is attributed to the
+      //   callsite of myTestWrapper.
+      // - a test list file that does require('./my-first-file') that is attributed to the
+      //   calliste inside my-first-file.
+      // - a test generator like myParametrizedTest([1, 2, 3], async param => { ... }) that
+      //   is attributed to the callsite of myParametrizedTest.
+      let nonTestFrame = 1;
+      while (!forceTopFrame && stackFrames[nonTestFrame]) {
+        const fileName = stackFrames[nonTestFrame].getFileName() || '';
+        // Node up to 14 has internal/, 16+ has node:internal/.
+        const isInternal = fileName.startsWith('internal') || fileName.startsWith('node:');
+        const isFramework = fileName.startsWith(kFrameworkDir);
+        if (isInternal || isFramework) {
+          targetFrame = nonTestFrame - 1;
+          break;
+        }
+        nonTestFrame++;
+      }
+
+      const frame: NodeJS.CallSite = sourceMapSupport.wrapCallSite(stackFrames[targetFrame]);
       const fileName = frame.getFileName();
       // Node error stacks for modules use file:// urls instead of paths.
       const file = (fileName && fileName.startsWith('file://')) ? url.fileURLToPath(fileName) : fileName;
@@ -150,7 +175,7 @@ export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Lo
         column: frame.getColumnNumber(),
       };
     };
-    Error.stackTraceLimit = 2;
+    Error.stackTraceLimit = forceTopFrame ? 2 : 20;
     const obj: { stack: Location } = {} as any;
     Error.captureStackTrace(obj);
     const location = obj.stack;
