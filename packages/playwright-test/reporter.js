@@ -14,4 +14,5 @@
  * limitations under the License.
  */
 
-// We only export types in reporter.d.ts.
+const { Runner } = require('./lib/runner');
+exports.TestRunner = Runner;

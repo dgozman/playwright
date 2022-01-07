@@ -14,4 +14,4 @@
  * limitations under the License.
  */
 
-// We only export types in reporter.d.ts.
+export { TestRunner } from './reporter.js';

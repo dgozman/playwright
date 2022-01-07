@@ -202,3 +202,80 @@ test('should not stall when workers are available', async ({ runInlineTest }) =>
     '%%passes-2-done',
   ]);
 });
+
+test('should suport TestRunner api', async ({ writeFiles, childProcess }) => {
+  const baseDir = await writeFiles({
+    'playwright.config.js': `
+      module.exports = {
+        projects: [
+          { name: 'foo' },
+          { name: 'bar' },
+        ],
+      };
+    `,
+    'a.spec.ts': `
+      const { test } = pwt;
+      test('my test', async () => {
+        console.log('my output');
+        await new Promise(f => setTimeout(f, 1000));
+      });
+      test('passing', async () => {
+      });
+    `,
+    'program.js': `
+      const { TestRunner } = require('@playwright/test/reporter');
+      const { expect } = require('@playwright/test');
+      (async () => {
+        console.log('running all projects');
+        const runner1 = new TestRunner({ configOverrides: { reporter: 'dot', workers: 2 } });
+        await runner1.loadConfigFromFile(process.cwd());
+        const r1 = await runner1.runAllTests();
+        expect(r1.result.status).toBe('passed');
+        expect(r1.config.projects.length).toBe(2);
+        expect(r1.suite.suites.length).toBe(2);  // project suites
+        expect(r1.suite.allTests().length).toBe(4);
+        expect(r1.suite.suites[0].suites[0].tests[0].results[0].stdout[0]).toContain('my output');
+
+        console.log('running for the second time');
+        try {
+          await runner1.runAllTests();
+          console.log('DID NOT FAIL');
+        } catch (e) {
+          console.log('ERROR: ' + e.message);
+        }
+
+        console.log('running one project');
+        const runner2 = new TestRunner({ configOverrides: { reporter: 'dot', workers: 2, timeout: 500 } });
+        await runner2.loadConfigFromFile(process.cwd());
+        const r2 = await runner2.runAllTests({ projectFilter: ['foo'] });
+        expect(r2.result.status).toBe('failed');
+        expect(r2.config.projects.length).toBe(2);
+        expect(r2.suite.suites.length).toBe(1);  // project suites
+        expect(r2.suite.allTests().length).toBe(2);
+      })();
+    `
+  });
+  const child = childProcess({
+    command: ['node', path.join(baseDir, 'program.js')],
+    cwd: baseDir,
+  });
+  await child.cleanExit();
+
+  const lines = stripAscii(child.output).split('\n').map(line => line.trim().replace(/\([\dms]+\)/, '(X)')).filter(line => !!line);
+  const expected = [
+    'running all projects',
+    'Running 4 tests using 2 workers',
+    'my output',
+    'my output',
+    '····',
+    '4 passed (X)',
+    'running for the second time',
+    'ERROR: Cannot run tests for the second time',
+    'running one project',
+    'Running 2 tests using 1 worker',
+    'my output',
+    'T·',
+    '1) [foo] › a.spec.ts:6:7 › my test ===============================================================',
+  ];
+  expect(lines.slice(0, expected.length)).toEqual(expected);
+});

@@ -23,7 +23,7 @@ import { Dispatcher, TestGroup } from './dispatcher';
 import { createFileMatcher, createTitleMatcher, FilePatternFilter, monotonicTime, serializeError } from './util';
 import { TestCase, Suite } from './test';
 import { Loader } from './loader';
-import { FullResult, Reporter, TestError } from '../types/testReporter';
+import { FullResult, Reporter, TestError, TestRunner } from '../types/testReporter';
 import { Multiplexer } from './reporters/multiplexer';
 import DotReporter from './reporters/dot';
 import GitHubReporter from './reporters/github';
@@ -48,23 +48,29 @@ type InternalGlobalSetupFunction = () => Promise<() => Promise<void>>;
 
 type RunOptions = {
   listOnly?: boolean;
-  filePatternFilter?: FilePatternFilter[];
+  testFilter?: FilePatternFilter[];
   projectFilter?: string[];
 };
+type RunResult = { result: FullResult, config: FullConfig, suite: Suite };
 
-export class Runner {
+export class Runner implements TestRunner {
   private _loader: Loader;
   private _printResolvedConfig: boolean;
   private _reporter!: Reporter;
   private _didBegin = false;
+  private _configLoaded = false;
   private _internalGlobalSetups: Array<InternalGlobalSetupFunction> = [];
 
-  constructor(configOverrides: Config, options: { defaultConfig?: Config, printResolvedConfig?: boolean } = {}) {
+  constructor(options: { configOverrides?: Config, defaultConfig?: Config, printResolvedConfig?: boolean } = {}) {
     this._printResolvedConfig = !!options.printResolvedConfig;
-    this._loader = new Loader(options.defaultConfig || {}, configOverrides);
+    this._loader = new Loader(options.defaultConfig || {}, options.configOverrides || {});
   }
 
   async loadConfigFromFile(configFileOrDirectory: string): Promise<Config> {
+    if (this._configLoaded)
+      throw new Error(`Cannot load two config files`);
+    this._configLoaded = true;
+
     const loadConfig = async (configFile: string) => {
       if (fs.existsSync(configFile)) {
         if (this._printResolvedConfig)
@@ -138,19 +144,24 @@ export class Runner {
     this._internalGlobalSetups.push(internalGlobalSetup);
   }
 
-  async runAllTests(options: RunOptions = {}): Promise<FullResult> {
+  async runAllTests(options: RunOptions = {}): Promise<RunResult> {
+    if (!this._configLoaded)
+      throw new Error(`Cannot run tests without loading a config file`);
+    if (this._reporter)
+      throw new Error(`Cannot run tests for the second time`);
+
     this._reporter = await this._createReporter(!!options.listOnly);
+    const config = this._loader.fullConfig();
     try {
-      const config = this._loader.fullConfig();
       const globalDeadline = config.globalTimeout ? config.globalTimeout + monotonicTime() : 0;
-      const result = await raceAgainstDeadline(this._run(!!options.listOnly, options.filePatternFilter || [], options.projectFilter), globalDeadline);
+      const result = await raceAgainstDeadline(this._run(!!options.listOnly, options.testFilter || [], options.projectFilter), globalDeadline);
       if (result.timedOut) {
         const actualResult: FullResult = { status: 'timedout' };
         if (this._didBegin)
           await this._reporter.onEnd?.(actualResult);
         else
           this._reporter.onError?.(createStacklessError(`Timed out waiting ${config.globalTimeout / 1000}s for the entire test run`));
-        return actualResult;
+        return { result: actualResult, config, suite: new Suite('') };
       }
       return result.result;
     } catch (e) {
@@ -159,7 +170,7 @@ export class Runner {
         this._reporter.onError?.(serializeError(e));
       } catch (ignored) {
       }
-      return result;
+      return { result, config, suite: new Suite('') };
     } finally {
       // Calling process.exit() might truncate large stdout/stderr output.
       // See https://github.com/nodejs/node/issues/6456.
@@ -169,7 +180,7 @@ export class Runner {
     }
   }
 
-  async _run(list: boolean, testFileReFilters: FilePatternFilter[], projectNames?: string[]): Promise<FullResult> {
+  async _run(list: boolean, testFileReFilters: FilePatternFilter[], projectNames?: string[]): Promise<RunResult> {
     const testFileFilter = testFileReFilters.length ? createFileMatcher(testFileReFilters.map(e => e.re)) : () => true;
     const config = this._loader.fullConfig();
 
@@ -234,13 +245,13 @@ export class Runner {
         const onlyTestsAndSuites = preprocessRoot._getOnlyItems();
         if (onlyTestsAndSuites.length > 0) {
           this._reporter.onError?.(createForbidOnlyError(config, onlyTestsAndSuites));
-          return { status: 'failed' };
+          return { result: { status: 'failed' }, config, suite: new Suite('') };
         }
       }
       const clashingTests = getClashingTestsPerSuite(preprocessRoot);
       if (clashingTests.size > 0) {
         this._reporter.onError?.(createDuplicateTitlesError(config, clashingTests));
-        return { status: 'failed' };
+        return { result: { status: 'failed' }, config, suite: new Suite('') };
       }
       filterOnly(preprocessRoot);
       filterByFocusedLine(preprocessRoot, testFileReFilters);
@@ -278,7 +289,7 @@ export class Runner {
       let total = rootSuite.allTests().length;
       if (!total) {
         this._reporter.onError?.(createNoTestsError());
-        return { status: 'failed' };
+        return { result: { status: 'failed' }, config, suite: rootSuite };
       }
 
       await Promise.all(Array.from(outputDirs).map(outputDir => removeFolderAsync(outputDir).catch(e => {})));
@@ -358,13 +369,13 @@ export class Runner {
       if (sigint) {
         const result: FullResult = { status: 'interrupted' };
         await this._reporter.onEnd?.(result);
-        return result;
+        return { result, config, suite: rootSuite };
       }
 
       const failed = hasWorkerErrors || rootSuite.allTests().some(test => !test.ok());
       const result: FullResult = { status: failed ? 'failed' : 'passed' };
       await this._reporter.onEnd?.(result);
-      return result;
+      return { result, config, suite: rootSuite };
     } finally {
       if (globalSetupResult && typeof globalSetupResult === 'function')
         await globalSetupResult(this._loader.fullConfig());
@@ -386,7 +397,7 @@ function filterOnly(suite: Suite) {
 function filterByFocusedLine(suite: Suite, focusedTestFileLines: FilePatternFilter[]) {
   const testFileLineMatches = (testFileName: string, testLine: number) => focusedTestFileLines.some(({ re, line }) => {
     re.lastIndex = 0;
-    return re.test(testFileName) && (line === testLine || line === null);
+    return re.test(testFileName) && (line === testLine || line === undefined);
   });
   const suiteFilter = (suite: Suite) => !!suite.location && testFileLineMatches(suite.location.file, suite.location.line);
   const testFilter = (test: TestCase) => testFileLineMatches(test.location.file, test.location.line);

@@ -64,11 +64,10 @@ export class Loader {
     let config = await this._requireOrImport(file);
     if (config && typeof config === 'object' && ('default' in config))
       config = config['default'];
-    this._config = config;
+    this._config = { ...config };
     this._configFile = file;
-    const rawConfig = { ...config };
     this._processConfigObject(path.dirname(file));
-    return rawConfig;
+    return config;
   }
 
   loadEmptyConfig(rootDir: string): Config {
@@ -97,7 +96,7 @@ export class Loader {
     this._fullConfig.forbidOnly = takeFirst(this._configOverrides.forbidOnly, this._config.forbidOnly, baseFullConfig.forbidOnly);
     this._fullConfig.globalSetup = takeFirst(this._configOverrides.globalSetup, this._config.globalSetup, baseFullConfig.globalSetup);
     this._fullConfig.globalTeardown = takeFirst(this._configOverrides.globalTeardown, this._config.globalTeardown, baseFullConfig.globalTeardown);
-    this._fullConfig.globalTimeout = takeFirst(this._configOverrides.globalTimeout, this._configOverrides.globalTimeout, this._config.globalTimeout, baseFullConfig.globalTimeout);
+    this._fullConfig.globalTimeout = takeFirst(this._configOverrides.globalTimeout, this._config.globalTimeout, baseFullConfig.globalTimeout);
     this._fullConfig.grep = takeFirst(this._configOverrides.grep, this._config.grep, baseFullConfig.grep);
     this._fullConfig.grepInvert = takeFirst(this._configOverrides.grepInvert, this._config.grepInvert, baseFullConfig.grepInvert);
     this._fullConfig.maxFailures = takeFirst(this._configOverrides.maxFailures, this._config.maxFailures, baseFullConfig.maxFailures);

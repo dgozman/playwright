@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import type { FullConfig, FullProject, TestStatus, TestError } from './test';
+import type { FullConfig, FullProject, TestStatus, TestError, Config } from './test';
 export type { FullConfig, TestStatus, TestError } from './test';
 
 /**
@@ -436,6 +436,56 @@ export interface Reporter {
    * - `'interrupted'` - Interrupted by the user.
    */
   onEnd?(result: FullResult): void | Promise<void>;
+}
+
+/**
+ * [TestRunner] allows to run Playwright tests programmatically.
+ *
+ * ```ts
+ * import { TestRunner } from '@playwright/test/reporter';
+ *
+ * async function runTests() {
+ *   // Prepare to run tests in a single worker in headed mode.
+ *   const runner = new TestRunner({
+ *     configOverrides: { workers: 1, use: { headless: false } },
+ *   });
+ *   // Load configuration file from the current directory, if one exists.
+ *   await runner.loadConfigFromFile(process.cwd());
+ *   // Run all tests from the 'my-project' project.
+ *   const { result, suite, config } = await runner.runAllTests({
+ *     projectFilter: ['my-project'],
+ *   });
+ *   // Check the result.
+ *   console.log(result);
+ * }
+ * ```
+ *
+ */
+export class TestRunner {
+  constructor(options?: { configOverrides: Config });
+  /**
+   * Loads a configuration file if any, or a default configuration. This method must be called once after creating a
+   * [TestRunner].
+   * @param configFileOrDirectory Path to the configuration file, or base testing directory. It is often convenient to pass `process.cwd()`.
+   */
+  loadConfigFromFile(configFileOrDirectory: string): Promise<unknown>;
+  /**
+   * Filters available tests and runs them. Returns:
+   * - The full resolved `config` that takes into account the loaded configuration file as well as configuration overrides.
+   * - The root `suite` that contains all test to be run, filtered by the `projectFilter` and `testFilter`.
+   * - The final result with the status of the run.
+   *   - `'passed'` - Everything went as expected.
+   *   - `'failed'` - Any test has failed.
+   *   - `'timedout'` - The
+   *     [testConfig.globalTimeout](https://playwright.dev/docs/api/class-testconfig#test-config-global-timeout) has been
+   *     reached.
+   *   - `'interrupted'` - Interrupted by the user.
+   * @param options
+   */
+  runAllTests(options?: {
+    testFilter?: { re: RegExp, line?: number }[],
+    projectFilter?: string[],
+  }): Promise<{ config: FullConfig, suite: Suite, result: FullResult }>;
 }
 
 // This is required to not export everything by default. See https://github.com/Microsoft/TypeScript/issues/19545#issuecomment-340490459

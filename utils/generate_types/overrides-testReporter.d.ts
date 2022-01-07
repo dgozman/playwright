@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { FullConfig, FullProject, TestStatus, TestError } from './test';
+import type { FullConfig, FullProject, TestStatus, TestError, Config } from './test';
 export type { FullConfig, TestStatus, TestError } from './test';
 
 export interface Location {
@@ -101,6 +101,15 @@ export interface Reporter {
   onStepEnd?(test: TestCase, result: TestResult, step: TestStep): void;
   onError?(error: TestError): void;
   onEnd?(result: FullResult): void | Promise<void>;
+}
+
+export class TestRunner {
+  constructor(options?: { configOverrides: Config });
+  loadConfigFromFile(configFileOrDirectory: string): Promise<unknown>;
+  runAllTests(options?: {
+    testFilter?: { re: RegExp, line?: number }[],
+    projectFilter?: string[],
+  }): Promise<{ config: FullConfig, suite: Suite, result: FullResult }>;
 }
 
 // This is required to not export everything by default. See https://github.com/Microsoft/TypeScript/issues/19545#issuecomment-340490459

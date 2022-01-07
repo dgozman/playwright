@@ -43,7 +43,7 @@ export type Matcher = (value: string) => boolean;
 
 export type FilePatternFilter = {
   re: RegExp;
-  line: number | null;
+  line?: number;
 };
 
 export function createFileMatcher(patterns: string | RegExp | (string | RegExp)[]): Matcher {
