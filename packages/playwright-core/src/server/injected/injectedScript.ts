@@ -18,12 +18,14 @@ import { SelectorEngine, SelectorRoot } from './selectorEngine';
 import { XPathEngine } from './xpathSelectorEngine';
 import { ReactEngine } from './reactSelectorEngine';
 import { VueEngine } from './vueSelectorEngine';
+import { RoleEngine } from './roleSelectorEngine';
 import { allEngineNames, ParsedSelector, ParsedSelectorPart, parseSelector, stringifySelector } from '../common/selectorParser';
 import { SelectorEvaluatorImpl, isVisible, parentElementOrShadowHost, elementMatchesText, TextMatcher, createRegexTextMatcher, createStrictTextMatcher, createLaxTextMatcher } from './selectorEvaluator';
 import { CSSComplexSelectorList } from '../common/cssParser';
 import { generateSelector } from './selectorGenerator';
 import type * as channels from '../../protocol/channels';
 import { Highlight } from './highlight';
+import { getElementAccessibleName } from './roleUtils';
 
 type Predicate<T> = (progress: InjectedScriptProgress) => T | symbol;
 
@@ -87,6 +89,7 @@ export class InjectedScript {
     this._engines.set('xpath:light', XPathEngine);
     this._engines.set('_react', ReactEngine);
     this._engines.set('_vue', VueEngine);
+    this._engines.set('role', RoleEngine);
     this._engines.set('text', this._createTextEngine(true));
     this._engines.set('text:light', this._createTextEngine(false));
     this._engines.set('id', this._createAttributeEngine('id', true));
@@ -1062,6 +1065,11 @@ export class InjectedScript {
       return { received, matches: allMatchesFound };
     }
     throw this.createStacklessError('Unknown expect matcher: ' + expression);
+  }
+
+  getElementAccessibleName(element: Element, includeHidden?: boolean): string {
+    const hiddenCache = new Map<Element, boolean>();
+    return getElementAccessibleName(element, !!includeHidden, hiddenCache);
   }
 }
 

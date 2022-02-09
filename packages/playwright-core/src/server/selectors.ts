@@ -38,7 +38,7 @@ export class Selectors {
     this._builtinEngines = new Set([
       'css', 'css:light',
       'xpath', 'xpath:light',
-      '_react', '_vue',
+      '_react', '_vue', 'role',
       'text', 'text:light',
       'id', 'id:light',
       'data-testid', 'data-testid:light',
