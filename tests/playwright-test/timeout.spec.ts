@@ -144,8 +144,14 @@ test('should respect test.slow', async ({ runInlineTest }) => {
 test('should ignore test.setTimeout when debugging', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'a.spec.ts': `
-      const { test } = pwt;
-      test('my test', async ({}) => {
+      const test = pwt.test.extend({
+        fixture: async ({}, use) => {
+          test.setTimeout(100);
+          await new Promise(f => setTimeout(f, 200));
+          await use('hey');
+        },
+      });
+      test('my test', async ({ fixture }) => {
         test.setTimeout(1000);
         await new Promise(f => setTimeout(f, 2000));
       });
@@ -153,4 +159,84 @@ test('should ignore test.setTimeout when debugging', async ({ runInlineTest }) =
   }, { timeout: 0 });
   expect(result.exitCode).toBe(0);
   expect(result.passed).toBe(1);
+});
+
+test('should respect test.setTimeout in the fixture', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: async ({}, use) => {
+          test.setTimeout(2000);
+          await new Promise(f => setTimeout(f, 800));
+          await use('hey');
+          await new Promise(f => setTimeout(f, 800));
+        },
+
+        slowSetup: async ({}, use) => {
+          test.setTimeout(1000);
+          await new Promise(f => setTimeout(f, 2000));
+          await use('hey');
+        },
+
+        slowTeardown: async ({}, use) => {
+          test.setTimeout(900);
+          await use('hey');
+          await new Promise(f => setTimeout(f, 2000));
+        },
+      });
+
+      test('test ok', async ({ fixture }) => {
+        await new Promise(f => setTimeout(f, 1000));
+      });
+      test('test setup', async ({ slowSetup }) => {
+      });
+      test('test teardown', async ({ slowTeardown }) => {
+      });
+    `
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(1);
+  expect(result.failed).toBe(2);
+  expect(result.output).toContain('Timeout of 1000ms exceeded');
+  expect(result.output).toContain('Timeout of 900ms exceeded');
+});
+
+test('should respect test.setTimeout in the worker fixture', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      const test = pwt.test.extend({
+        fixture: [async ({}, use) => {
+          test.setTimeout(2000);
+          await new Promise(f => setTimeout(f, 800));
+          await use('hey');
+          await new Promise(f => setTimeout(f, 800));
+        }, { scope: 'worker' }],
+
+        slowSetup: [async ({}, use) => {
+          test.setTimeout(1000);
+          await new Promise(f => setTimeout(f, 2000));
+          await use('hey');
+        }, { scope: 'worker' }],
+
+        slowTeardown: [async ({}, use) => {
+          test.setTimeout(900);
+          await use('hey');
+          await new Promise(f => setTimeout(f, 2000));
+        }, { scope: 'worker' }],
+      });
+
+      test('test ok', async ({ fixture }) => {
+        await new Promise(f => setTimeout(f, 1000));
+      });
+      test('test teardown', async ({ slowTeardown }) => {
+      });
+      test('test setup', async ({ slowSetup }) => {
+      });
+    `
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(2);
+  expect(result.failed).toBe(1);
+  expect(result.output).toContain('Timeout of 1000ms exceeded');
+  expect(result.output).toContain('Timeout of 900ms exceeded');
 });

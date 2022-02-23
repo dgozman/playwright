@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { TestInfoImpl } from './testInfo';
+import type { TestInfoImpl, WorkerInfoImpl } from './testInfo';
 import { Suite } from './test';
 
 let currentTestInfoValue: TestInfoImpl | null = null;
@@ -23,6 +23,14 @@ export function setCurrentTestInfo(testInfo: TestInfoImpl | null) {
 }
 export function currentTestInfo(): TestInfoImpl | null {
   return currentTestInfoValue;
+}
+
+let currentWorkerInfoValue: WorkerInfoImpl | null = null;
+export function setCurrentWorkerInfo(workerInfo: WorkerInfoImpl | null) {
+  currentWorkerInfoValue = workerInfo;
+}
+export function currentWorkerInfo(): WorkerInfoImpl | null {
+  return currentWorkerInfoValue;
 }
 
 let currentFileSuite: Suite | undefined;

@@ -15,7 +15,7 @@
  */
 
 import { expect } from './expect';
-import { currentlyLoadingFileSuite, currentTestInfo, setCurrentlyLoadingFileSuite } from './globals';
+import { currentlyLoadingFileSuite, currentTestInfo, currentWorkerInfo, setCurrentlyLoadingFileSuite } from './globals';
 import { TestCase, Suite } from './test';
 import { wrapFunctionWithLocation } from './transform';
 import { Fixtures, FixturesWithLocation, Location, TestType } from './types';
@@ -190,6 +190,12 @@ export class TestTypeImpl {
     const suite = currentlyLoadingFileSuite();
     if (suite) {
       suite._timeout = timeout;
+      return;
+    }
+
+    const workerInfo = currentWorkerInfo();
+    if (workerInfo) {
+      workerInfo._setTimeout(timeout);
       return;
     }
 

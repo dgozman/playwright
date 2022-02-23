@@ -17,15 +17,39 @@
 import fs from 'fs';
 import * as mime from 'mime';
 import path from 'path';
-import { TimeoutRunner, TimeoutRunnerError } from 'playwright-core/lib/utils/async';
 import { calculateSha1 } from 'playwright-core/lib/utils/utils';
-import type { FullConfig, FullProject, TestError, TestInfo, TestStatus } from '../types/test';
+import type { FullConfig, FullProject, TestError, TestInfo, TestStatus, WorkerInfo } from '../types/test';
 import { WorkerInitParams } from './ipc';
 import { Loader } from './loader';
 import { ProjectImpl } from './project';
 import { TestCase } from './test';
+import { TimeoutRunner, TimeoutRunnerError } from './timeoutRunner';
 import { Annotations, TestStepInternal } from './types';
 import { addSuffixToFilePath, getContainedPath, monotonicTime, sanitizeForFilePath, serializeError, trimLongString } from './util';
+
+export class WorkerInfoImpl implements WorkerInfo {
+  readonly _timeoutRunner: TimeoutRunner;
+
+  // ------------ WorkerInfo fields ------------
+  readonly workerIndex: number;
+  readonly parallelIndex: number;
+  readonly project: FullProject;
+  readonly config: FullConfig;
+
+  constructor(loader: Loader, workerParams: WorkerInitParams) {
+    this.config = loader.fullConfig();
+    this.project = loader.projects()[workerParams.projectIndex].config;
+    this.workerIndex = workerParams.workerIndex;
+    this.parallelIndex = workerParams.parallelIndex;
+
+    this._timeoutRunner = new TimeoutRunner();
+    this._timeoutRunner.updateCurrentSlotTimeout(this.project.timeout);
+  }
+
+  _setTimeout(timeout: number) {
+    this._timeoutRunner.updateCurrentSlotTimeout(timeout);
+  }
+}
 
 export class TestInfoImpl implements TestInfo {
   private _projectImpl: ProjectImpl;
@@ -103,7 +127,8 @@ export class TestInfoImpl implements TestInfo {
     this.expectedStatus = test.expectedStatus;
     this.timeout = this.project.timeout;
 
-    this._timeoutRunner = new TimeoutRunner(this.timeout);
+    this._timeoutRunner = new TimeoutRunner();
+    this._timeoutRunner.updateCurrentSlotTimeout(this.project.timeout);
 
     this.outputDir = (() => {
       const sameName = loader.projects().filter(project => project.config.name === this.project.name);
@@ -150,7 +175,8 @@ export class TestInfoImpl implements TestInfo {
     const description = modifierArgs[1];
     this.annotations.push({ type, description });
     if (type === 'slow') {
-      this.setTimeout(this.timeout * 3);
+      this.timeout = this.timeout * 3;
+      this._timeoutRunner.updateDefaultTimeout(this.timeout);
     } else if (type === 'skip' || type === 'fixme') {
       this.expectedStatus = 'skipped';
       throw new SkipError('Test is skipped: ' + (description || ''));
@@ -158,19 +184,6 @@ export class TestInfoImpl implements TestInfo {
       if (this.expectedStatus !== 'skipped')
         this.expectedStatus = 'failed';
     }
-  }
-
-  async _runWithTimeout(cb: () => Promise<any>): Promise<void> {
-    try {
-      await this._timeoutRunner.run(cb);
-    } catch (error) {
-      if (!(error instanceof TimeoutRunnerError))
-        throw error;
-      // Do not overwrite existing failure upon hook/teardown timeout.
-      if (this.status === 'passed')
-        this.status = 'timedOut';
-    }
-    this.duration = monotonicTime() - this._startTime;
   }
 
   async _runFn(fn: Function, skips?: 'allowSkips'): Promise<TestError | undefined> {
@@ -182,7 +195,13 @@ export class TestInfoImpl implements TestInfo {
           this.status = 'skipped';
       } else {
         const serialized = serializeError(error);
-        this._failWithError(serialized, true /* isHardError */);
+        if (error instanceof TimeoutRunnerError) {
+          // Do not overwrite existing failure upon hook/teardown timeout.
+          if (this.status === 'passed')
+            this.status = 'timedOut';
+        } else {
+          this._failWithError(serialized, true /* isHardError */);
+        }
         return serialized;
       }
     }
@@ -204,6 +223,19 @@ export class TestInfoImpl implements TestInfo {
     if (this.status === 'passed')
       this.status = 'failed';
     this.errors.push(error);
+  }
+
+  _updateDuration() {
+    this.duration = monotonicTime() - this._startTime;
+  }
+
+  _workerInfo(): WorkerInfo {
+    return {
+      workerIndex: this.workerIndex,
+      parallelIndex: this.parallelIndex,
+      project: this.project,
+      config: this.config,
+    };
   }
 
   // ------------ TestInfo methods ------------
@@ -266,8 +298,9 @@ export class TestInfoImpl implements TestInfo {
   setTimeout(timeout: number) {
     if (!this.timeout)
       return; // Zero timeout means some debug mode - do not set a timeout.
-    this.timeout = timeout;
-    this._timeoutRunner.updateTimeout(timeout);
+    if (!this._timeoutRunner.isRunningCustomTimeSlot())
+      this.timeout = timeout;
+    this._timeoutRunner.updateCurrentSlotTimeout(timeout);
   }
 }
 

@@ -16,8 +16,10 @@
 
 import { formatLocation, debugTest } from './util';
 import * as crypto from 'crypto';
-import { FixturesWithLocation, Location, WorkerInfo, TestInfo } from './types';
+import { FixturesWithLocation, Location } from './types';
 import { ManualPromise } from 'playwright-core/lib/utils/async';
+import { TestInfoImpl, WorkerInfoImpl } from './testInfo';
+import { TimeSlot } from './timeoutRunner';
 
 type FixtureScope = 'test' | 'worker';
 type FixtureOptions = { auto?: boolean, scope?: FixtureScope, option?: boolean };
@@ -34,15 +36,17 @@ type FixtureRegistration = {
   super?: FixtureRegistration;  // A fixture override can use the previous version of the fixture.
 };
 
-class Fixture {
-  runner: FixtureRunner;
-  registration: FixtureRegistration;
-  usages: Set<Fixture>;
+class Fixture implements TimeSlot {
+  private runner: FixtureRunner;
+  readonly registration: FixtureRegistration;
+  private usages: Set<Fixture>;
   value: any;
+  private useFuncFinished: ManualPromise<void> | undefined;
+  private fixtureFuncFinished: Promise<void> | undefined;
+  private teardownComplete: Promise<void> | undefined;
 
-  _useFuncFinished: ManualPromise<void> | undefined;
-  _selfTeardownComplete: Promise<void> | undefined;
-  _teardownWithDepsComplete: Promise<void> | undefined;
+  // TimeSlot impl.
+  timeoutData = 'shared' as const;
 
   constructor(runner: FixtureRunner, registration: FixtureRegistration) {
     this.runner = runner;
@@ -51,7 +55,7 @@ class Fixture {
     this.value = null;
   }
 
-  async setup(workerInfo: WorkerInfo, testInfo: TestInfo | undefined) {
+  async setup(info: TestInfoImpl | WorkerInfoImpl) {
     if (typeof this.registration.fn !== 'function') {
       this.value = this.registration.fn;
       return;
@@ -60,7 +64,7 @@ class Fixture {
     const params: { [key: string]: any } = {};
     for (const name of this.registration.deps) {
       const registration = this.runner.pool!.resolveDependency(this.registration, name)!;
-      const dep = await this.runner.setupFixtureForRegistration(registration, workerInfo, testInfo);
+      const dep = await this.runner.setupFixtureForRegistration(registration, info);
       dep.usages.add(this);
       params[name] = dep.value;
     }
@@ -73,37 +77,39 @@ class Fixture {
         throw new Error(`Cannot provide fixture value for the second time`);
       called = true;
       this.value = value;
-      this._useFuncFinished = new ManualPromise<void>();
+      this.useFuncFinished = new ManualPromise<void>();
       useFuncStarted.resolve();
-      await this._useFuncFinished;
+      await this.useFuncFinished;
     };
-    const info = this.registration.scope === 'worker' ? workerInfo : testInfo;
-    this._selfTeardownComplete = Promise.resolve().then(() => this.registration.fn(params, useFunc, info)).catch((e: any) => {
-      if (!useFuncStarted.isDone())
-        useFuncStarted.reject(e);
-      else
-        throw e;
-    });
-    await useFuncStarted;
+    await info._timeoutRunner.run(async () => {
+      const fnInfoArg = this.registration.scope === 'worker' && (info instanceof TestInfoImpl) ? info._workerInfo() : info;
+      this.fixtureFuncFinished = Promise.resolve().then(() => this.registration.fn(params, useFunc, fnInfoArg)).catch((e: any) => {
+        if (!useFuncStarted.isDone())
+          useFuncStarted.reject(e);
+        else
+          throw e;
+      });
+      await useFuncStarted;
+    }, this);
   }
 
-  async teardown() {
-    if (!this._teardownWithDepsComplete)
-      this._teardownWithDepsComplete = this._teardownInternal();
-    await this._teardownWithDepsComplete;
+  async teardown(info: TestInfoImpl | WorkerInfoImpl) {
+    if (typeof this.registration.fn !== 'function')
+      return;
+    for (const fixture of this.usages)
+      await fixture.teardown(info);
+    this.usages.clear();
+    if (!this.teardownComplete)
+      this.teardownComplete = this._teardownInternal();
+    await info._timeoutRunner.run(async () => this.teardownComplete, this);
   }
 
   private async _teardownInternal() {
-    if (typeof this.registration.fn !== 'function')
-      return;
     try {
-      for (const fixture of this.usages)
-        await fixture.teardown();
-      this.usages.clear();
-      if (this._useFuncFinished) {
+      if (this.useFuncFinished) {
         debugTest(`teardown ${this.registration.name}`);
-        this._useFuncFinished.resolve();
-        await this._selfTeardownComplete;
+        this.useFuncFinished.resolve();
+        await this.fixtureFuncFinished;
       }
     } finally {
       this.runner.instanceForId.delete(this.registration.id);
@@ -241,14 +247,14 @@ export class FixtureRunner {
     this.pool = pool;
   }
 
-  async teardownScope(scope: FixtureScope) {
+  async teardownScope(scope: FixtureScope, info: TestInfoImpl | WorkerInfoImpl) {
     let error: Error | undefined;
     // Teardown fixtures in the reverse order.
     const fixtures = Array.from(this.instanceForId.values()).reverse();
     for (const fixture of fixtures) {
       if (fixture.registration.scope === scope) {
         try {
-          await fixture.teardown();
+          await fixture.teardown(info);
         } catch (e) {
           if (error === undefined)
             error = e;
@@ -261,12 +267,13 @@ export class FixtureRunner {
       throw error;
   }
 
-  async resolveParametersForFunction(fn: Function, workerInfo: WorkerInfo, testInfo: TestInfo | undefined): Promise<object> {
+  async resolveParametersForFunction(fn: Function, info: TestInfoImpl | WorkerInfoImpl): Promise<object> {
     // Install all automatic fixtures.
+    const isTestScope = info instanceof TestInfoImpl;
     for (const registration of this.pool!.registrations.values()) {
-      const shouldSkip = !testInfo && registration.scope === 'test';
+      const shouldSkip = !isTestScope && registration.scope === 'test';
       if (registration.auto && !shouldSkip)
-        await this.setupFixtureForRegistration(registration, workerInfo, testInfo);
+        await this.setupFixtureForRegistration(registration, info);
     }
 
     // Install used fixtures.
@@ -274,18 +281,18 @@ export class FixtureRunner {
     const params: { [key: string]: any } = {};
     for (const name of names) {
       const registration = this.pool!.registrations.get(name)!;
-      const fixture = await this.setupFixtureForRegistration(registration, workerInfo, testInfo);
+      const fixture = await this.setupFixtureForRegistration(registration, info);
       params[name] = fixture.value;
     }
     return params;
   }
 
-  async resolveParametersAndRunFunction(fn: Function, workerInfo: WorkerInfo, testInfo: TestInfo | undefined) {
-    const params = await this.resolveParametersForFunction(fn, workerInfo, testInfo);
-    return fn(params, testInfo || workerInfo);
+  async resolveParametersAndRunFunction(fn: Function, info: TestInfoImpl | WorkerInfoImpl) {
+    const params = await this.resolveParametersForFunction(fn, info);
+    return info._timeoutRunner.run(async () => fn(params, info));
   }
 
-  async setupFixtureForRegistration(registration: FixtureRegistration, workerInfo: WorkerInfo, testInfo: TestInfo | undefined): Promise<Fixture> {
+  async setupFixtureForRegistration(registration: FixtureRegistration, info: TestInfoImpl | WorkerInfoImpl): Promise<Fixture> {
     if (registration.scope === 'test')
       this.testScopeClean = false;
 
@@ -295,7 +302,7 @@ export class FixtureRunner {
 
     fixture = new Fixture(this, registration);
     this.instanceForId.set(registration.id, fixture);
-    await fixture.setup(workerInfo, testInfo);
+    await fixture.setup(info);
     return fixture;
   }
 
