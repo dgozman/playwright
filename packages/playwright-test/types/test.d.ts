@@ -16,9 +16,9 @@
  */
 
 import type { APIRequestContext, Browser, BrowserContext, BrowserContextOptions, Page, LaunchOptions, ViewportSize, Geolocation, HTTPCredentials } from 'playwright-core';
-import type { Expect } from './testExpect';
+import type { Expect } from '@playwright/test/types/testExpect';
 
-export type { Expect } from './testExpect';
+export type { Expect } from '@playwright/test/types/testExpect';
 
 export type ReporterDescription =
   ['dot'] |
@@ -3172,7 +3172,7 @@ export interface PlaywrightTestOptions {
  * [fixtures.page](https://playwright.dev/docs/api/class-fixtures#fixtures-page).
  */
 export interface PlaywrightWorkerArgs {
-  playwright: typeof import('..');
+  playwright: typeof import('@playwright/test');
   /**
    * [Browser] instance is shared between all tests in the [same worker](https://playwright.dev/docs/test-parallel) - this makes testing efficient.
    * However, each test runs in an isolated [BrowserContext]  and gets a fresh environment.

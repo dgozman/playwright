@@ -23,7 +23,7 @@ import { Frame } from './frames';
 import { ParsedSelector } from './common/selectorParser';
 import * as types from './types';
 import { Progress } from './progress';
-import { assert } from '../utils/utils';
+import { assert, experimentalFeaturesEnabled } from '../utils/utils';
 import { MultiMap } from '../utils/multimap';
 
 declare global {
@@ -141,6 +141,8 @@ export class Screenshotter {
   }
 
   async _preparePageForScreenshot(progress: Progress, hideCaret: boolean, disableAnimations: boolean, waitForFonts: boolean) {
+    if (!experimentalFeaturesEnabled())
+      waitForFonts = false;
     if (disableAnimations)
       progress.log('  disabled all CSS animations');
     if (waitForFonts)

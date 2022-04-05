@@ -74,7 +74,7 @@ class ApiParser {
         continue;
       }
     }
-    const clazz = new Documentation.Class(extractLangs(node), name, [], extendsName, extractComments(node));
+    const clazz = new Documentation.Class(extractLangs(node), extractExperimental(node), name, [], extendsName, extractComments(node));
     this.classes.set(clazz.name, clazz);
   }
 
@@ -97,11 +97,11 @@ class ApiParser {
 
     let member;
     if (match[1] === 'event')
-      member = Documentation.Member.createEvent(extractLangs(spec), name, returnType, extractComments(spec));
+      member = Documentation.Member.createEvent(extractLangs(spec), extractExperimental(spec), name, returnType, extractComments(spec));
     if (match[1] === 'property')
-      member = Documentation.Member.createProperty(extractLangs(spec), name, returnType, extractComments(spec));
+      member = Documentation.Member.createProperty(extractLangs(spec), extractExperimental(spec), name, returnType, extractComments(spec));
     if (match[1] === 'method' || match[1] === 'async method') {
-      member = Documentation.Member.createMethod(extractLangs(spec), name, [], returnType, extractComments(spec));
+      member = Documentation.Member.createMethod(extractLangs(spec), extractExperimental(spec), name, [], returnType, extractComments(spec));
       if (match[1] === 'async method')
         member.async = true;
     }
@@ -160,7 +160,7 @@ class ApiParser {
       let options = method.argsArray.find(o => o.name === 'options');
       if (!options) {
         const type = new Documentation.Type('Object', []);
-        options = Documentation.Member.createProperty({}, 'options', type, undefined, false);
+        options = Documentation.Member.createProperty({}, false, 'options', type, undefined, false);
         method.argsArray.push(options);
       }
       const p = this.parseProperty(spec);
@@ -177,7 +177,7 @@ class ApiParser {
     const text = param.text;
     const name = text.substring(0, text.indexOf('<')).replace(/\`/g, '').trim();
     const comments = extractComments(spec);
-    return Documentation.Member.createProperty(extractLangs(spec), name, this.parseType(param), comments, guessRequired(md.render(comments)));
+    return Documentation.Member.createProperty(extractLangs(spec), extractExperimental(spec), name, this.parseType(param), comments, guessRequired(md.render(comments)));
   }
 
   /**
@@ -190,7 +190,7 @@ class ApiParser {
     for (const child of spec.children || []) {
       const { name, text } = parseVariable(child.text);
       const comments = /** @type {MarkdownNode[]} */ ([{ type: 'text', text }]);
-      properties.push(Documentation.Member.createProperty({}, name, this.parseType(child), comments, guessRequired(text)));
+      properties.push(Documentation.Member.createProperty({}, false, name, this.parseType(child), comments, guessRequired(text)));
     }
     return Documentation.Type.parse(arg.type, properties);
   }
@@ -289,6 +289,8 @@ function extractComments(item) {
       return false;
     if (c.type === 'li' && c.text.startsWith('langs:'))
       return false;
+    if (c.type === 'li' && c.text === 'experimental')
+      return false;
     return true;
   });
 }
@@ -350,10 +352,25 @@ function extractLangs(spec) {
 
 /**
  * @param {MarkdownNode} spec
+ * @returns {boolean}
+ */
+function extractExperimental(spec) {
+  for (const child of spec.children) {
+    if (child.type === 'li' && child.liType === 'bullet' && child.text === 'experimental')
+      return true;
+  }
+  return false;
+}
+
+/**
+ * @param {MarkdownNode} spec
  * @returns {MarkdownNode[]}
  */
 function childrenWithoutProperties(spec) {
-  return spec.children.filter(c => c.liType !== 'bullet' || !c.text.startsWith('langs'));
+  return spec.children.filter(c => {
+    const isProperty = c.liType === 'bullet' && (c.text.startsWith('langs') || c.text === 'experimental');
+    return !isProperty;
+  });
 }
 
 /**

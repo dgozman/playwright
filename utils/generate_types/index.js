@@ -33,13 +33,15 @@ Error.stackTraceLimit = 50;
 class TypesGenerator {
   /**
    * @param {Documentation} documentation
+   * @param {boolean} includeExperimental
    */
-  constructor(documentation) {
+  constructor(documentation, includeExperimental) {
     /** @type {Array<{name: string, properties: Member[]}>} */
     this.objectDefinitions = [];
     /** @type {Set<string>} */
     this.handledMethods = new Set();
     this.documentation = documentation;
+    this.includeExperimental = includeExperimental;
   }
 
   /**
@@ -122,8 +124,10 @@ class TypesGenerator {
       overrides,
       '',
       docsOnlyClassMapping ? '' : classes.map(classDesc => {
+        if (classDesc.experimental && !this.includeExperimental)
+          return '';
         return (classDesc.name === 'Playwright') ? this.classBody(classDesc, true) : this.classToString(classDesc);
-      }).join('\n'),
+      }).filter(x => x).join('\n'),
       this.objectDefinitionsToString(overrides),
       '',
     ].join('\n');
@@ -150,11 +154,10 @@ class TypesGenerator {
     const internalWords = new Set(overriddes.split(/[^\w$]/g));
     while ((definition = this.objectDefinitions.pop())) {
       const { name, properties } = definition;
-      const shouldExport = !!exported[name];
       const usedInternally = internalWords.has(name);
-      if (!usedInternally && !shouldExport)
+      if (!usedInternally && !exported[name])
         continue;
-      parts.push(`${shouldExport ? 'export ' : ''}interface ${name} ${this.stringifyObjectType(properties, name, '')}\n`)
+      parts.push(`${exported[name] ? 'export ' : ''}interface ${name} ${this.stringifyObjectType(properties, name, '')}\n`)
     }
     return parts.join('\n');
   }
@@ -216,7 +219,8 @@ class TypesGenerator {
         type,
         params,
         eventName,
-        comment: value.comment
+        comment: value.comment,
+        experimental: value.experimental,
       });
     }
     return descriptions;
@@ -236,7 +240,10 @@ class TypesGenerator {
     }
     const indent = exportMembersAsGlobals ? '' : '  ';
     for (const method of ['on', 'once', 'addListener', 'removeListener', 'off']) {
-      for (const { eventName, params, comment } of eventDescriptions) {
+      for (const { eventName, params, comment, experimental } of eventDescriptions) {
+        // if (experimental !== this.includeExperimental)
+        if (experimental && !this.includeExperimental)
+          continue;
         if ((method === 'on' || method === 'addListener') && comment)
           parts.push(this.writeComment(comment, indent));
         else
@@ -251,7 +258,9 @@ class TypesGenerator {
         return '';
       if (member.alias === 'waitForEvent') {
         const parts = [];
-        for (const { eventName, params, comment, type } of eventDescriptions) {
+        for (const { eventName, params, comment, type, experimental } of eventDescriptions) {
+          if (experimental && !this.includeExperimental)
+            continue;
           if (comment)
             parts.push(this.writeComment(comment, indent));
           parts.push(`  ${member.alias}(event: '${eventName}', optionsOrPredicate?: { predicate?: (${params}) => boolean | Promise<boolean>, timeout?: number } | ((${params}) => boolean | Promise<boolean>)): Promise<${type}>;\n`);
@@ -264,8 +273,8 @@ class TypesGenerator {
       let type = this.stringifyComplexType(member.type, indent, classDesc.name, member.alias);
       if (member.async)
         type = `Promise<${type}>`;
-      // do this late, because we still want object definitions for overridden types
-      if (!this.hasOwnMethod(classDesc, member.alias))
+      // do this late, because we still want object definitions for overridden and experimental types
+      if (!this.hasOwnMethod(classDesc, member.alias) || (member.experimental && !this.includeExperimental))
         return '';
       if (exportMembersAsGlobals) {
         const memberType = member.kind === 'method' ? `${args} => ${type}` : type;
@@ -344,10 +353,21 @@ class TypesGenerator {
     return this.stringifySimpleType(type, indent, ...namespace);
   }
 
+  /**
+   * @param {Documentation.Member[]} properties
+   * @param {string} name
+   * @param {string=} indent
+   * @returns {string}
+   */
   stringifyObjectType(properties, name, indent = '') {
     const parts = [];
     parts.push(`{`);
-    parts.push(properties.map(member => `${this.memberJSDOC(member, indent + '  ')}${this.nameForProperty(member)}${this.argsFromMember(member, indent + '  ', name)}: ${this.stringifyComplexType(member.type, indent + '  ', name, member.name)};`).join('\n\n'));
+    parts.push(properties.filter(member => !member.experimental || this.includeExperimental).map(member => {
+      const comment = this.memberJSDOC(member, indent + '  ');
+      const args = this.argsFromMember(member, indent + '  ', name);
+      const type = this.stringifyComplexType(member.type, indent + '  ', name, member.name);
+      return `${comment}${this.nameForProperty(member)}${args}: ${type};`;
+    }).join('\n\n'));
     parts.push(indent + '}');
     return parts.join('\n');
   }
@@ -481,7 +501,7 @@ class TypesGenerator {
 
   const apiDocumentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
   apiDocumentation.index();
-  const apiTypesGenerator = new TypesGenerator(apiDocumentation);
+  const apiTypesGenerator = new TypesGenerator(apiDocumentation, false);
   let apiTypes = await apiTypesGenerator.generateTypes(path.join(__dirname, 'overrides.d.ts'));
   const namedDevices = Object.keys(devices).map(name => `  ${JSON.stringify(name)}: DeviceDescriptor;`).join('\n');
   apiTypes += [
@@ -504,7 +524,7 @@ class TypesGenerator {
 
   const testOnlyDocumentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'test-api'), path.join(PROJECT_DIR, 'docs', 'src', 'api', 'params.md'));
   const testDocumentation = apiDocumentation.mergeWith(testOnlyDocumentation);
-  const testTypesGenerator = new TypesGenerator(testDocumentation);
+  const testTypesGenerator = new TypesGenerator(testDocumentation, false);
   const testClassMapping = new Map([
     ['TestType', 'Test'],
     ['Config', 'TestConfig'],
@@ -521,10 +541,16 @@ class TypesGenerator {
 
   const testReporterOnlyDocumentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'test-reporter-api'));
   const testReporterDocumentation = testDocumentation.mergeWith(testReporterOnlyDocumentation);
-  const testReporterTypesGenerator = new TypesGenerator(testReporterDocumentation);
+  const testReporterTypesGenerator = new TypesGenerator(testReporterDocumentation, false);
   let testReporterTypes = await testReporterTypesGenerator.generateTypes(path.join(__dirname, 'overrides-testReporter.d.ts'), new Map());
   testReporterTypes = testReporterTypes.replace(/( +)\n/g, '\n'); // remove trailing whitespace
   writeFile(path.join(testTypesDir, 'testReporter.d.ts'), testReporterTypes);
+
+  const experimentalDocumentation = testReporterDocumentation;
+  const experimentalTypesGenerator = new TypesGenerator(experimentalDocumentation, true);
+  let experimentalTypes = await experimentalTypesGenerator.generateTypes(path.join(__dirname, 'overrides-experimental.d.ts'));
+  experimentalTypes = (experimentalTypes + '\n}\n').replace(/( +)\n/g, '\n'); // remove trailing whitespace
+  writeFile(path.join(PROJECT_DIR, 'utils', 'experimental.d.ts'), experimentalTypes);
 
   process.exit(hadChanges && process.argv.includes('--check-clean') ? 1 : 0);
 })().catch(e => {

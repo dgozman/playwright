@@ -15,9 +15,9 @@
  */
 
 import type { APIRequestContext, Browser, BrowserContext, BrowserContextOptions, Page, LaunchOptions, ViewportSize, Geolocation, HTTPCredentials } from 'playwright-core';
-import type { Expect } from './testExpect';
+import type { Expect } from '@playwright/test/types/testExpect';
 
-export type { Expect } from './testExpect';
+export type { Expect } from '@playwright/test/types/testExpect';
 
 export type ReporterDescription =
   ['dot'] |
@@ -423,7 +423,7 @@ export interface PlaywrightTestOptions {
 
 
 export interface PlaywrightWorkerArgs {
-  playwright: typeof import('..');
+  playwright: typeof import('@playwright/test');
   browser: Browser;
 }
 

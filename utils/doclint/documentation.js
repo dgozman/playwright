@@ -154,13 +154,15 @@ class Documentation {
 Documentation.Class = class {
   /**
    * @param {Langs} langs
+   * @param {boolean} experimental
    * @param {string} name
    * @param {!Array<!Documentation.Member>} membersArray
    * @param {?string=} extendsName
    * @param {MarkdownNode[]=} spec
    */
-  constructor(langs, name, membersArray, extendsName = null, spec = undefined) {
+  constructor(langs, experimental, name, membersArray, extendsName = null, spec = undefined) {
     this.langs = langs;
+    this.experimental = experimental;
     this.name = name;
     this.membersArray = membersArray;
     this.spec = spec;
@@ -280,16 +282,17 @@ Documentation.Member = class {
   /**
    * @param {string} kind
    * @param {Langs} langs
+   * @param {boolean} experimental
    * @param {string} name
    * @param {?Documentation.Type} type
    * @param {!Array<!Documentation.Member>} argsArray
    * @param {MarkdownNode[]=} spec
    * @param {boolean=} required
-   * @param {string[]=} templates
    */
-  constructor(kind, langs, name, type, argsArray, spec = undefined, required = true, templates = []) {
+  constructor(kind, langs, experimental, name, type, argsArray, spec = undefined, required = true) {
     this.kind = kind;
     this.langs = langs;
+    this.experimental = experimental;
     this.name = name;
     this.type = type;
     this.spec = spec;
@@ -362,7 +365,7 @@ Documentation.Member = class {
   }
 
   clone() {
-    const result = new Documentation.Member(this.kind, this.langs, this.name, this.type, this.argsArray, this.spec, this.required);
+    const result = new Documentation.Member(this.kind, this.langs, this.experimental, this.name, this.type, this.argsArray, this.spec, this.required);
     result.async = this.async;
     result.paramOrOption = this.paramOrOption;
     return result;
@@ -370,37 +373,40 @@ Documentation.Member = class {
 
   /**
    * @param {Langs} langs
+   * @param {boolean} experimental
    * @param {string} name
    * @param {!Array<!Documentation.Member>} argsArray
    * @param {?Documentation.Type} returnType
    * @param {MarkdownNode[]=} spec
    * @return {!Documentation.Member}
    */
-  static createMethod(langs, name, argsArray, returnType, spec) {
-    return new Documentation.Member('method', langs, name, returnType, argsArray, spec);
+  static createMethod(langs, experimental, name, argsArray, returnType, spec) {
+    return new Documentation.Member('method', langs, experimental, name, returnType, argsArray, spec);
   }
 
   /**
    * @param {!Langs} langs
+   * @param {boolean} experimental
    * @param {!string} name
    * @param {!Documentation.Type} type
    * @param {!MarkdownNode[]=} spec
    * @param {boolean=} required
    * @return {!Documentation.Member}
    */
-  static createProperty(langs, name, type, spec, required) {
-    return new Documentation.Member('property', langs, name, type, [], spec, required);
+  static createProperty(langs, experimental, name, type, spec, required) {
+    return new Documentation.Member('property', langs, experimental, name, type, [], spec, required);
   }
 
   /**
    * @param {Langs} langs
+   * @param {boolean} experimental
    * @param {string} name
    * @param {?Documentation.Type=} type
    * @param {MarkdownNode[]=} spec
    * @return {!Documentation.Member}
    */
-  static createEvent(langs, name, type = null, spec) {
-    return new Documentation.Member('event', langs, name, type, [], spec);
+  static createEvent(langs, experimental, name, type = null, spec) {
+    return new Documentation.Member('event', langs, experimental, name, type, [], spec);
   }
 
   /**
@@ -489,14 +495,15 @@ Documentation.Type = class {
    */
   constructor(name, properties) {
     this.name = name.replace(/^\[/, '').replace(/\]$/, '');
+    /** @type {Documentation.Member[] | undefined} */
     this.properties = this.name === 'Object' ? properties : undefined;
-    /** @type {Documentation.Type[]} | undefined */
+    /** @type {Documentation.Type[] | undefined} */
     this.union;
-    /** @type {Documentation.Type[]} | undefined */
+    /** @type {Documentation.Type[] | undefined} */
     this.args;
-    /** @type {Documentation.Type} | undefined */
+    /** @type {Documentation.Type | undefined} */
     this.returnType;
-    /** @type {Documentation.Type[]} | undefined */
+    /** @type {Documentation.Type[] | undefined} */
     this.templates;
     /** @type {string | undefined } */
     this.expression;
