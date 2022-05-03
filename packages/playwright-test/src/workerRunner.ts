@@ -61,6 +61,7 @@ export class WorkerRunner extends EventEmitter {
     super();
     this._params = params;
     this._fixtureRunner = new FixtureRunner();
+    this._fixtureRunner.globalFixtureValues = params.globalFixtureValues;
 
     // Resolve this promise, so worker does not stall waiting for the non-existent run to finish,
     // when it was sopped before running any test group.
@@ -442,7 +443,7 @@ export class WorkerRunner extends EventEmitter {
 
   private async _runModifiersForSuite(suite: Suite, testInfo: TestInfoImpl, scope: 'worker' | 'test', timeSlot: TimeSlot | undefined, extraAnnotations?: Annotation[]) {
     for (const modifier of suite._modifiers) {
-      const actualScope = this._fixtureRunner.dependsOnWorkerFixturesOnly(modifier.fn, modifier.location) ? 'worker' : 'test';
+      const actualScope = this._fixtureRunner.dependsOnWorkerAndGlobalFixturesOnly(modifier.fn, modifier.location) ? 'worker' : 'test';
       if (actualScope !== scope)
         continue;
       testInfo._timeoutManager.setCurrentRunnable({ type: modifier.type, location: modifier.location, slot: timeSlot });

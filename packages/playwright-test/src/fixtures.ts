@@ -20,12 +20,13 @@ import type { FixturesWithLocation, Location, WorkerInfo } from './types';
 import { ManualPromise } from 'playwright-core/lib/utils/manualPromise';
 import type { TestInfoImpl } from './testInfo';
 import type { FixtureDescription, TimeoutManager } from './timeoutManager';
+import { GlobalFixtureValues } from './ipc';
 
-type FixtureScope = 'test' | 'worker';
-const kScopeOrder: FixtureScope[] = ['test', 'worker'];
+type FixtureScope = 'test' | 'worker' | 'global';
+const kScopeOrder: FixtureScope[] = ['test', 'worker', 'global'];
 type FixtureOptions = { auto?: boolean, scope?: FixtureScope, option?: boolean, timeout?: number | undefined };
 type FixtureTuple = [ value: any, options: FixtureOptions ];
-type FixtureRegistration = {
+export type FixtureRegistration = {
   // Fixture registration location.
   location: Location;
   // Fixture name comes from test.extend() call.
@@ -41,7 +42,10 @@ type FixtureRegistration = {
   customTitle?: string;
   // Fixture with a separate timeout does not count towards the test time.
   timeout?: number;
-  // Names of the dependencies, comes from the declaration "({ foo, bar }) => {...}"
+  // Fixture function argument names, comes from the declaration "({ foo, bar }) => {...}"
+  fnArgs: string[];
+  // Names of fixtures this one depends on. Usually the same as fnArgs, but renamed for
+  // global fixtures.
   deps: string[];
   // Unique id, to differentiate between fixtures with the same name.
   id: string;
@@ -81,12 +85,18 @@ class Fixture {
       return;
     }
 
+    if (this.runner.globalFixtureValues && this.registration.scope === 'global') {
+      const persistentId = this.runner.pool!.persistentId(this.registration);
+      this.value = this.runner.globalFixtureValues[persistentId];
+      return;
+    }
+
     const params: { [key: string]: any } = {};
-    for (const name of this.registration.deps) {
-      const registration = this.runner.pool!.resolveDependency(this.registration, name)!;
+    for (let i = 0; i < this.registration.deps.length; i++) {
+      const registration = this.runner.pool!.resolveDependency(this.registration, this.registration.deps[i])!;
       const dep = await this.runner.setupFixtureForRegistration(registration, testInfo);
       dep.usages.add(this);
-      params[name] = dep.value;
+      params[this.registration.fnArgs[i]] = dep.value;
     }
 
     let called = false;
@@ -102,7 +112,7 @@ class Fixture {
       await this._useFuncFinished;
     };
     const workerInfo: WorkerInfo = { config: testInfo.config, parallelIndex: testInfo.parallelIndex, workerIndex: testInfo.workerIndex, project: testInfo.project };
-    const info = this.registration.scope === 'worker' ? workerInfo : testInfo;
+    const info = this.registration.scope === 'test' ? testInfo : workerInfo;
     testInfo._timeoutManager.setCurrentFixture(this._runnableDescription);
     this._selfTeardownComplete = Promise.resolve().then(() => this.registration.fn(params, useFunc, info)).catch((e: any) => {
       if (!useFuncStarted.isDone())
@@ -153,7 +163,11 @@ export class FixturePool {
   readonly digest: string;
   readonly registrations: Map<string, FixtureRegistration>;
 
-  constructor(fixturesList: FixturesWithLocation[], parentPool?: FixturePool, disallowWorkerFixtures?: boolean) {
+  // Id that is persistent between workers and runner processes.
+  // Used to identify global fixtures.
+  private _registrationToPersistentId = new Map<FixtureRegistration, string>();
+
+  constructor(fixturesList: FixturesWithLocation[], parentPool?: FixturePool, disallowNonTestFixtures?: boolean) {
     this.registrations = new Map(parentPool ? parentPool.registrations : []);
 
     for (const { fixtures, location } of fixturesList) {
@@ -187,11 +201,11 @@ export class FixturePool {
 
         if (!kScopeOrder.includes(options.scope))
           throw errorWithLocations(`Fixture "${name}" has unknown { scope: '${options.scope}' }.`, { location, name });
-        if (options.scope === 'worker' && disallowWorkerFixtures)
+        if (options.scope !== 'test' && disallowNonTestFixtures)
           throw errorWithLocations(`Cannot use({ ${name} }) in a describe group, because it forces a new worker.\nMake it top-level in the test file or put in the configuration file.`, { location, name });
 
         const deps = fixtureParameterNames(fn, location);
-        const registration: FixtureRegistration = { id: '', name, location, scope: options.scope, fn, auto: options.auto, option: options.option, timeout: options.timeout, customTitle: options.customTitle, deps, super: previous };
+        const registration: FixtureRegistration = { id: '', name, location, scope: options.scope, fn, auto: options.auto, option: options.option, timeout: options.timeout, customTitle: options.customTitle, deps, fnArgs: deps, super: previous };
         registrationId(registration);
         this.registrations.set(name, registration);
       }
@@ -203,9 +217,19 @@ export class FixturePool {
   private validate() {
     const markers = new Map<FixtureRegistration, 'visiting' | 'visited'>();
     const stack: FixtureRegistration[] = [];
-    const visit = (registration: FixtureRegistration) => {
+    const visit = (registration: FixtureRegistration): string => {
+      if (markers.get(registration) === 'visiting') {
+        const index = stack.indexOf(registration);
+        const regs = stack.slice(index, stack.length);
+        const names = regs.map(r => `"${r.name}"`);
+        throw errorWithLocations(`Fixtures ${names.join(' -> ')} -> "${registration.name}" form a dependency cycle.`, ...regs);
+      }
+      if (markers.get(registration) === 'visited')
+        return this._registrationToPersistentId.get(registration)!;
+
       markers.set(registration, 'visiting');
       stack.push(registration);
+      let persistentId = registration.name + '@' + registration.location.file + ':' + registration.location.line + ':' + registration.location.column;
       for (const name of registration.deps) {
         const dep = this.resolveDependency(registration, name);
         if (!dep) {
@@ -216,17 +240,15 @@ export class FixturePool {
         }
         if (kScopeOrder.indexOf(registration.scope) > kScopeOrder.indexOf(dep.scope))
           throw errorWithLocations(`${registration.scope} fixture "${registration.name}" cannot depend on a ${dep.scope} fixture "${name}".`, registration, dep);
-        if (!markers.has(dep)) {
-          visit(dep);
-        } else if (markers.get(dep) === 'visiting') {
-          const index = stack.indexOf(dep);
-          const regs = stack.slice(index, stack.length);
-          const names = regs.map(r => `"${r.name}"`);
-          throw errorWithLocations(`Fixtures ${names.join(' -> ')} -> "${dep.name}" form a dependency cycle.`, ...regs);
-        }
+        persistentId += ';' + visit(dep);
       }
+      if (registration.super)
+        persistentId += '=' + visit(registration.super);
+      persistentId = crypto.createHash('sha1').update(persistentId).digest('hex');
+      this._registrationToPersistentId.set(registration, persistentId);
       markers.set(registration, 'visited');
       stack.pop();
+      return persistentId;
     };
 
     const hash = crypto.createHash('sha1');
@@ -234,10 +256,14 @@ export class FixturePool {
     for (const name of names) {
       const registration = this.registrations.get(name)!;
       visit(registration);
-      if (registration.scope === 'worker')
+      if (registration.scope === 'worker' || registration.scope === 'global')
         hash.update(registration.id + ';');
     }
     return hash.digest('hex');
+  }
+
+  persistentId(registration: FixtureRegistration) {
+    return this._registrationToPersistentId.get(registration)!;
   }
 
   validateFunction(fn: Function, prefix: string, location: Location) {
@@ -264,6 +290,7 @@ export class FixtureRunner {
   private testScopeClean = true;
   pool: FixturePool | undefined;
   instanceForId = new Map<string, Fixture>();
+  globalFixtureValues?: GlobalFixtureValues;
 
   setPool(pool: FixturePool) {
     if (!this.testScopeClean)
@@ -331,11 +358,11 @@ export class FixtureRunner {
     return fixture;
   }
 
-  dependsOnWorkerFixturesOnly(fn: Function, location: Location): boolean {
+  dependsOnWorkerAndGlobalFixturesOnly(fn: Function, location: Location): boolean {
     const names = fixtureParameterNames(fn, location);
     for (const name of names) {
       const registration = this.pool!.registrations.get(name)!;
-      if (registration.scope !== 'worker')
+      if (registration.scope !== 'worker' && registration.scope !== 'global')
         return false;
     }
     return true;

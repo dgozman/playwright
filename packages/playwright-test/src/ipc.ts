@@ -25,12 +25,15 @@ export type SerializedLoaderData = {
   overridesForLegacyConfigMode?: ConfigCLIOverrides;
 };
 
+export type GlobalFixtureValues = { [key: string]: any };
+
 export type WorkerInitParams = {
   workerIndex: number;
   parallelIndex: number;
   repeatEachIndex: number;
   projectIndex: number;
   loader: SerializedLoaderData;
+  globalFixtureValues: GlobalFixtureValues;
 };
 
 export type TestBeginPayload = {
