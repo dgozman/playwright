@@ -46,6 +46,8 @@ type TestSummary = {
   failuresToPrint: TestCase[];
 };
 
+export type TitleOptions = { test: TestCase, step?: TestStep, prefix?: string, suffix?: string, color?: 'gray' | 'cyan' | 'red', noFit?: boolean };
+
 export class BaseReporter implements Reporter  {
   duration = 0;
   config!: FullConfigInternal;
@@ -106,13 +108,48 @@ export class BaseReporter implements Reporter  {
     this.result = result;
   }
 
-  protected fitToScreen(line: string, suffix?: string): string {
-    const ttyWidth = this._ttyWidthForTest || process.stdout.columns || 0;
-    if (!ttyWidth) {
-      // Guard against the case where we cannot determine available width.
-      return line;
+  protected formatTestTitleForTTY(options: TitleOptions): string {
+    const colorer = { 'cyan': colors.cyan, 'red': colors.red, 'gray': colors.gray, 'none': (s: string) => s }[options.color || 'none'];
+    const prefix = options.prefix || '';
+    const suffix = options.suffix || '';
+    const parts = testTitleParts(this.config, options.test, options.step);
+
+    // Guard against the case where we cannot determine available width.
+    const available = options.noFit ? Infinity : (this._ttyWidthForTest || process.stdout.columns || Infinity);
+
+    // Items in the order of truncation:
+    // 0. nothing:     "  -  [chromium] > a.spec.ts > describe name > full test name > step 5 (retry 1)"
+    // 1. subtitles:   "  -  [chromium] > a.spec.ts > descr... > full test name > step 5 (retry 1)"
+    // 2. title:       "  -  [chromium] > full te... > step 5 (retry 1)"
+    // 3. project:     "  -  [chro... > step 5 (retry 1)"
+    // 4. step:        "  -  ste... (retry 1)"
+    // 5. suffix:      "  -  (retr..."
+    // 6. prefix:      "  -..."
+    const items = [
+      { text: parts.subtitles },
+      { text: parts.title },
+      { text: parts.project },
+      { text: parts.step },
+      { text: suffix, length: stripAnsiEscapes(suffix).length, resetColors: true },
+      { text: prefix, length: stripAnsiEscapes(prefix).length, resetColors: true },
+    ];
+
+    let width = 0;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const len = items[i].length ?? items[i].text.length;
+      const maybeEllipsis = (i === 0 ? 0 : 1);
+      if (width + len + maybeEllipsis >= available) {
+        // Found the first item that does not fit. Truncate it.
+        items[i].text = fitToWidth(items[i].text, available - width - 1 /* ellipsis */, items[i].resetColors);
+        items[i].text += `\u2026`;
+        // All less important items also do not fit.
+        for (let j = i - 1; j >= 0; j--)
+          items[j].text = '';
+        break;
+      }
+      width += len;
     }
-    return fitToWidth(line, ttyWidth, suffix);
+    return items[5].text + colorer(items[2].text + items[0].text + items[1].text + items[3].text) + items[4].text;
   }
 
   protected generateStartingMessage() {
@@ -334,12 +371,23 @@ function stepSuffix(step: TestStep | undefined) {
   return stepTitles.map(t => ' › ' + t).join('');
 }
 
-export function formatTestTitle(config: FullConfig, test: TestCase, step?: TestStep): string {
+function testTitleParts(config: FullConfig, test: TestCase, step?: TestStep): { project: string, subtitles: string, title: string, step: string } {
   // root, project, file, ...describes, test
-  const [, projectName, , ...titles] = test.titlePath();
+  const [, projectName, , ...subtitles] = test.titlePath();
+  const title = subtitles.pop();
   const location = `${relativeTestPath(config, test)}:${test.location.line}:${test.location.column}`;
-  const projectTitle = projectName ? `[${projectName}] › ` : '';
-  return `${projectTitle}${location} › ${titles.join(' › ')}${stepSuffix(step)}`;
+  const projectTitle = projectName ? `[${projectName}]` : '';
+  return {
+    project: projectTitle,
+    subtitles: `${projectTitle ? ` › ` : ''}${location} › ${subtitles.join(' › ')}`,
+    title: ` › ${title}`,
+    step: stepSuffix(step),
+  }
+}
+
+export function formatTestTitle(config: FullConfig, test: TestCase, step?: TestStep): string {
+  const parts = testTitleParts(config, test, step);
+  return parts.project + parts.subtitles + parts.title + parts.step;
 }
 
 function formatTestHeader(config: FullConfig, test: TestCase, indent: string, index?: number): string {
@@ -433,10 +481,7 @@ export function stripAnsiEscapes(str: string): string {
   return str.replace(ansiRegex, '');
 }
 
-// Leaves enough space for the "suffix" to also fit.
-function fitToWidth(line: string, width: number, suffix?: string): string {
-  const suffixLength = suffix ? stripAnsiEscapes(suffix).length : 0;
-  width -= suffixLength;
+function fitToWidth(line: string, width: number, resetColors?: boolean): string {
   if (line.length <= width)
     return line;
   let m;
@@ -449,5 +494,5 @@ function fitToWidth(line: string, width: number, suffix?: string): string {
     ansiLen += m[0].length;
   }
   // Truncate and reset all colors.
-  return line.substr(0, width + ansiLen) + '\u001b[0m';
+  return line.substring(0, width + ansiLen) + (resetColors ? '\u001b[0m' : '');
 }

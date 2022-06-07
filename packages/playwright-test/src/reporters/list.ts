@@ -16,7 +16,7 @@
 
 /* eslint-disable no-console */
 import { colors, ms as milliseconds } from 'playwright-core/lib/utilsBundle';
-import { BaseReporter, formatTestTitle } from './base';
+import { BaseReporter, TitleOptions } from './base';
 import type { FullConfig, FullResult, Suite, TestCase, TestResult, TestStep } from '../../types/testReporter';
 
 // Allow it in the Visual Studio Code Terminal and the new Windows Terminal
@@ -52,9 +52,7 @@ class ListReporter extends BaseReporter {
         process.stdout.write('\n');
         this._lastRow++;
       }
-      const line = '     ' + colors.gray(formatTestTitle(this.config, test));
-      const suffix = this._retrySuffix(result);
-      process.stdout.write(this.fitToScreen(line, suffix) + suffix + '\n');
+      process.stdout.write(this.formatTestTitleForTTY({ test, prefix: '     ', color: 'gray', suffix: this._retrySuffix(result) }) + '\n');
     }
     this._testRows.set(test, this._lastRow++);
   }
@@ -74,7 +72,7 @@ class ListReporter extends BaseReporter {
       return;
     if (step.category !== 'test.step')
       return;
-    this._updateTestLine(test, '     ' + colors.gray(formatTestTitle(this.config, test, step)), this._retrySuffix(result));
+    this._updateTestLine(test, { prefix: '     ', color: 'gray', test, step, suffix: this._retrySuffix(result) });
   }
 
   onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
@@ -82,7 +80,7 @@ class ListReporter extends BaseReporter {
       return;
     if (step.category !== 'test.step')
       return;
-    this._updateTestLine(test, '     ' + colors.gray(formatTestTitle(this.config, test, step.parent)), this._retrySuffix(result));
+    this._updateTestLine(test, { prefix: '     ', color: 'gray', test, step: step.parent, suffix: this._retrySuffix(result) });
   }
 
   private _dumpToStdio(test: TestCase | undefined, chunk: string | Buffer, stream: NodeJS.WriteStream) {
@@ -100,48 +98,50 @@ class ListReporter extends BaseReporter {
   override onTestEnd(test: TestCase, result: TestResult) {
     super.onTestEnd(test, result);
 
-    let duration = colors.dim(` (${milliseconds(result.duration)})`);
-    const title = formatTestTitle(this.config, test);
-    let text = '';
+    const options: TitleOptions = { test };
     if (result.status === 'skipped') {
-      text = colors.green('  -  ') + colors.cyan(title);
-      duration = ''; // Do not show duration for skipped.
+      options.prefix = colors.green('  -  ');
+      options.color = 'cyan';
+      options.suffix = this._retrySuffix(result); // Do not show duration for skipped.
     } else {
       const statusMark = ('  ' + (result.status === 'passed' ? POSITIVE_STATUS_MARK : NEGATIVE_STATUS_MARK)).padEnd(5);
-      if (result.status === test.expectedStatus)
-        text = colors.green(statusMark) + colors.gray(title);
-      else
-        text = colors.red(statusMark + title);
+      if (result.status === test.expectedStatus) {
+        options.prefix = colors.green(statusMark);
+        options.color = 'gray';
+      } else {
+        options.prefix = colors.red(statusMark);
+        options.color = 'red';
+      }
+      options.suffix = this._retrySuffix(result) + colors.dim(` (${milliseconds(result.duration)})`);
     }
-    const suffix = this._retrySuffix(result) + duration;
 
     if (this._liveTerminal) {
-      this._updateTestLine(test, text, suffix);
+      this._updateTestLine(test, options);
     } else {
       if (this._needNewLine) {
         this._needNewLine = false;
         process.stdout.write('\n');
       }
-      process.stdout.write(text + suffix);
+      process.stdout.write(this.formatTestTitleForTTY({ ...options, noFit: true }));
       process.stdout.write('\n');
     }
   }
 
-  private _updateTestLine(test: TestCase, line: string, suffix: string) {
+  private _updateTestLine(test: TestCase, options: TitleOptions) {
     if (process.env.PW_TEST_DEBUG_REPORTERS)
-      this._updateTestLineForTest(test, line, suffix);
+      this._updateTestLineForTest(test, options);
     else
-      this._updateTestLineForTTY(test, line, suffix);
+      this._updateTestLineForTTY(test, options);
   }
 
-  private _updateTestLineForTTY(test: TestCase, line: string, suffix: string) {
+  private _updateTestLineForTTY(test: TestCase, options: TitleOptions) {
     const testRow = this._testRows.get(test)!;
     // Go up if needed
     if (testRow !== this._lastRow)
       process.stdout.write(`\u001B[${this._lastRow - testRow}A`);
     // Erase line, go to the start
     process.stdout.write('\u001B[2K\u001B[0G');
-    process.stdout.write(this.fitToScreen(line, suffix) + suffix);
+    process.stdout.write(this.formatTestTitleForTTY(options));
     // Go down if needed.
     if (testRow !== this._lastRow)
       process.stdout.write(`\u001B[${this._lastRow - testRow}E`);
@@ -151,9 +151,9 @@ class ListReporter extends BaseReporter {
     return (result.retry ? colors.yellow(` (retry #${result.retry})`) : '');
   }
 
-  private _updateTestLineForTest(test: TestCase, line: string, suffix: string) {
+  private _updateTestLineForTest(test: TestCase, options: TitleOptions) {
     const testRow = this._testRows.get(test)!;
-    process.stdout.write(testRow + ' : ' + line + suffix + '\n');
+    process.stdout.write(testRow + ' : ' + this.formatTestTitleForTTY({ ...options, noFit: true }) + '\n');
   }
 
   override async onEnd(result: FullResult) {
