@@ -23,7 +23,7 @@ import type { NestedSelectorBody, ParsedSelector, ParsedSelectorPart } from '../
 import { allEngineNames, parseSelector, stringifySelector } from '../isomorphic/selectorParser';
 import { type TextMatcher, elementMatchesText, createRegexTextMatcher, createStrictTextMatcher, createLaxTextMatcher } from './selectorUtils';
 import { SelectorEvaluatorImpl } from './selectorEvaluator';
-import { isElementVisible, parentElementOrShadowHost } from './domUtils';
+import { getElementComputedStyle, isElementVisible, parentElementOrShadowHost } from './domUtils';
 import type { CSSComplexSelectorList } from '../isomorphic/cssParser';
 import { generateSelector } from './selectorGenerator';
 import type * as channels from '../../protocol/channels';
@@ -326,6 +326,27 @@ export class InjectedScript {
     return isElementVisible(element);
   }
 
+  scrollElementIntoViewIsPossible(element: Element, options: ScrollIntoViewOptions): boolean {
+    const style = getElementComputedStyle(element);
+    console.log(`scrolling ${this.previewNode(element)} ${JSON.stringify(options)} ${document.body.scrollTop}`);
+    if (style && style.display === 'contents') {
+      console.log(`display:contents ${this.previewNode(element)}`);
+      // display:contents element cannot be scrolled into view, but its children can be.
+      for (let child = element.firstElementChild; child; child = child.nextElementSibling) {
+        if (this.scrollElementIntoViewIsPossible(child, options))
+          return true;
+      }
+      // When no child element is available, try scrolling the parent as a last resort.
+      const parent = element.parentElement;
+      if (parent && this.scrollElementIntoViewIsPossible(parent, options))
+        return true;
+      return false;
+    }
+    console.log(`regular ${this.previewNode(element)} ${document.body.scrollTop}`);
+    element.scrollIntoView(options);
+    return true;
+  }
+
   pollRaf<T>(predicate: Predicate<T>): InjectedScriptPoll<T> {
     return this.poll(predicate, next => requestAnimationFrame(next));
   }
@@ -431,9 +452,9 @@ export class InjectedScript {
   }
 
   getElementBorderWidth(node: Node): { left: number; top: number; } {
-    if (node.nodeType !== Node.ELEMENT_NODE || !node.ownerDocument || !node.ownerDocument.defaultView)
+    const style = getElementComputedStyle(node);
+    if (!style)
       return { left: 0, top: 0 };
-    const style = node.ownerDocument.defaultView.getComputedStyle(node as Element);
     return { left: parseInt(style.borderLeftWidth || '', 10), top: parseInt(style.borderTopWidth || '', 10) };
   }
 
@@ -1073,7 +1094,7 @@ export class InjectedScript {
       } else if (expression === 'to.have.class') {
         received = element.className;
       } else if (expression === 'to.have.css') {
-        received = window.getComputedStyle(element).getPropertyValue(options.expressionArg);
+        received = getElementComputedStyle(element)?.getPropertyValue(options.expressionArg);
       } else if (expression === 'to.have.id') {
         received = element.id;
       } else if (expression === 'to.have.text') {

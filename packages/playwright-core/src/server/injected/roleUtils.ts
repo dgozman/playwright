@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { closestCrossShadow, enclosingShadowRootOrDocument, parentElementOrShadowHost } from './domUtils';
+import { closestCrossShadow, enclosingShadowRootOrDocument, getElementComputedStyle, parentElementOrShadowHost } from './domUtils';
 
 function hasExplicitAccessibleName(e: Element) {
   return e.hasAttribute('aria-label') || e.hasAttribute('aria-labelledby');
@@ -225,16 +225,12 @@ function getAriaBoolean(attr: string | null) {
   return attr === null ? undefined : attr.toLowerCase() === 'true';
 }
 
-function getComputedStyle(element: Element, pseudo?: string): CSSStyleDeclaration | undefined {
-  return element.ownerDocument && element.ownerDocument.defaultView ? element.ownerDocument.defaultView.getComputedStyle(element, pseudo) : undefined;
-}
-
 // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion, but including "none" and "presentation" roles
 // https://www.w3.org/TR/wai-aria-1.2/#aria-hidden
 export function isElementHiddenForAria(element: Element, cache: Map<Element, boolean>): boolean {
   if (['STYLE', 'SCRIPT', 'NOSCRIPT', 'TEMPLATE'].includes(element.tagName))
     return true;
-  const style: CSSStyleDeclaration | undefined = getComputedStyle(element);
+  const style: CSSStyleDeclaration | undefined = getElementComputedStyle(element);
   if (!style || style.visibility === 'hidden')
     return true;
   return belongsToDisplayNoneOrAriaHidden(element, cache);
@@ -242,7 +238,7 @@ export function isElementHiddenForAria(element: Element, cache: Map<Element, boo
 
 function belongsToDisplayNoneOrAriaHidden(element: Element, cache: Map<Element, boolean>): boolean {
   if (!cache.has(element)) {
-    const style = getComputedStyle(element);
+    const style = getElementComputedStyle(element);
     let hidden = !style || style.display === 'none' || getAriaBoolean(element.getAttribute('aria-hidden')) === true;
     if (!hidden) {
       const parent = parentElementOrShadowHost(element);
@@ -581,7 +577,7 @@ function getElementAccessibleNameInternal(element: Element, options: AccessibleN
     const tokens: string[] = [];
     const visit = (node: Node) => {
       if (node.nodeType === 1 /* Node.ELEMENT_NODE */) {
-        const display = getComputedStyle(node as Element)?.getPropertyValue('display') || 'inline';
+        const display = getElementComputedStyle(node)?.getPropertyValue('display') || 'inline';
         let token = getElementAccessibleNameInternal(node as Element, childOptions);
         // SPEC DIFFERENCE.
         // Spec says "append the result to the accumulated text", assuming "with space".
@@ -595,7 +591,7 @@ function getElementAccessibleNameInternal(element: Element, options: AccessibleN
         tokens.push(node.textContent || '');
       }
     };
-    tokens.push(getPseudoContent(getComputedStyle(element, '::before')));
+    tokens.push(getPseudoContent(getElementComputedStyle(element, '::before')));
     for (let child = element.firstChild; child; child = child.nextSibling)
       visit(child);
     if (element.shadowRoot) {
@@ -604,7 +600,7 @@ function getElementAccessibleNameInternal(element: Element, options: AccessibleN
     }
     for (const owned of getIdRefs(element, element.getAttribute('aria-owns')))
       visit(owned);
-    tokens.push(getPseudoContent(getComputedStyle(element, '::after')));
+    tokens.push(getPseudoContent(getElementComputedStyle(element, '::after')));
     const accessibleName = tokens.join('');
     if (accessibleName.trim())
       return accessibleName;

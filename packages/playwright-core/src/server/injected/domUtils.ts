@@ -55,11 +55,18 @@ export function closestCrossShadow(element: Element | undefined, css: string): E
   }
 }
 
-export function isElementVisible(element: Element): boolean {
+export function getElementComputedStyle(node: Node, pseudo?: string): CSSStyleDeclaration | undefined {
+  if (node.nodeType !== 1 /* Node.ELEMENT_NODE */)
+    return;
+  const element = node as Element;
   // Note: this logic should be similar to waitForDisplayedAtStablePosition() to avoid surprises.
   if (!element.ownerDocument || !element.ownerDocument.defaultView)
-    return true;
-  const style = element.ownerDocument.defaultView.getComputedStyle(element);
+    return;
+  return element.ownerDocument.defaultView.getComputedStyle(element, pseudo);
+}
+
+export function isElementVisible(element: Element): boolean {
+  const style = getElementComputedStyle(element);
   if (!style || style.visibility === 'hidden')
     return false;
   if (style.display === 'contents') {

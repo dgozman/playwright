@@ -413,11 +413,12 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     if (forceScrollOptions) {
       const scrolled = await this.evaluateInUtility(([injected, node, options]) => {
         if (node.nodeType === 1 /* Node.ELEMENT_NODE */)
-          (node as Node as Element).scrollIntoView(options);
+          injected.scrollElementIntoViewIsPossible(node as Node as Element, options);
       }, forceScrollOptions);
       if (scrolled === 'error:notconnected')
         return scrolled;
     } else {
+      // TODO: teach browser to scroll "display:contents" element into view.
       const scrolled = await this._scrollRectIntoViewIfNeeded(position ? { x: position.x, y: position.y, width: 0, height: 0 } : undefined);
       if (scrolled !== 'done')
         return scrolled;
