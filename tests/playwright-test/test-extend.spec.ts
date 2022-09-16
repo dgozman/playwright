@@ -271,8 +271,8 @@ test('test.use() with undefined should not be ignored', async ({ runInlineTest }
   expect(result.output).toContain('test1: option2=default');
   expect(result.output).toContain('test2: option1=foo');
   expect(result.output).toContain('test2: option2=foo');
-  expect(result.output).toContain('test3: option1=config');
+  expect(result.output).toContain('test3: option1=default');
   expect(result.output).toContain('test3: option2=default');
-  expect(result.output).toContain('test4: option1=config');
+  expect(result.output).toContain('test4: option1=default');
   expect(result.output).toContain('test4: option2=default');
 });
