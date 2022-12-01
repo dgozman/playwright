@@ -30,6 +30,8 @@ declare module globalThis {
   let __pw_refreshOverlay: () => void;
 }
 
+type ListDescription = { depth: number, parent: Element | ShadowRoot | Document, items: Element[] };
+
 class Recorder {
   private _injectedScript: InjectedScript;
   private _performingAction = false;
@@ -44,6 +46,7 @@ class Recorder {
   private _actionSelector: string | undefined;
   private _highlight: Highlight;
   private _testIdAttributeName: string = 'data-testid';
+  private _lists: ListDescription[] = [];
 
   constructor(injectedScript: InjectedScript) {
     this._injectedScript = injectedScript;
@@ -58,6 +61,91 @@ class Recorder {
     globalThis.__pw_refreshOverlay();
     if (injectedScript.isUnderTest)
       console.error('Recorder script ready for test'); // eslint-disable-line no-console
+
+    setInterval(() => this._analyze(), 2000);
+  }
+
+  private _analyze() {
+    for (const list of this._lists) {
+      for (const e of list.items)
+        (e as HTMLElement).style.outline = '';
+    }
+
+    const lists: ListDescription[] = [];
+    this._visitLists(document, 0, lists);
+
+    for (const list of lists) {
+      const depth = Math.min(list.depth, 25);
+      const outline = `1px solid rgba(${255 - depth * 10}, ${depth * 10}, 0, 0.5)`;
+      for (const e of list.items)
+        (e as HTMLElement).style.outline = outline;
+    }
+    this._lists = lists;
+  }
+
+  // Returns structure, square, vertical and horizontal hashes.
+  private _visitLists(node: Document | Element | ShadowRoot, depth: number, lists: ListDescription[]): { size: number, st: string, sq: string, v: string, h: string } | undefined {
+    const stMap = new MultiMap<string, Element>();
+    const sqMap = new MultiMap<string, Element>();
+    const vMap = new MultiMap<string, Element>();
+    const hMap = new MultiMap<string, Element>();
+    const structure: string[] = [node.nodeName];
+    let size = 1;
+
+    for (let child = node.firstElementChild; child; child = child.nextElementSibling) {
+      const result = this._visitLists(child, depth + 1, lists);
+      if (result) {
+        size += result.size;
+        stMap.set(result.st, child);
+        sqMap.set(result.sq, child);
+        vMap.set(result.v, child);
+        hMap.set(result.h, child);
+        structure.push(child.nodeName);
+      }
+    }
+    if ((node as Element).shadowRoot) {
+      this._visitLists((node as Element).shadowRoot!, depth + 1, lists);
+      structure.push('#shadow');
+    }
+
+    if (depth >= 3) {
+      const used = new Set<Element>();
+      for (const map of [stMap, sqMap, vMap, hMap]) {
+        for (let [hash, list] of map) {
+          if (!hash)
+            continue;
+          list = list.filter(e => !used.has(e));
+          if (list.length < 3)
+            continue;
+          lists.push({
+            parent: node,
+            items: list,
+            depth,
+          });
+          list.forEach(e => used.add(e));
+        }
+      }
+    }
+
+    let result: { size: number, st: string, sq: string, h: string, v: string } | undefined;
+    const isElement = node.nodeType === 1 /* Node.ELEMENT_NODE */;
+    const isVisible = isElement && this._injectedScript.isVisible(node as Element);
+    if (isElement && isVisible && node.parentElement?.nodeName !== 'SVG') {
+      const e = node as Element;
+      const box = e.getBoundingClientRect();
+      result = {
+        size,
+        st: (structure.length >= 4) || (size >= 10) ? structure.join(',') : '',
+        sq: `${e.nodeName},${(size / 3) | 0},${box.height | 0},${box.width | 0}`,
+        v: size <= 5
+            ? `${e.nodeName},${(size / 3) | 0},${box.width | 0},${box.left | 0}`
+            : `${e.nodeName},${(size / 3) | 0},${box.width | 0},${box.left | 0},${2 * Math.log(box.height) | 0}`,
+        h: size <= 5
+            ? `${e.nodeName},${(size / 3) | 0},${box.height | 0},${box.top | 0}`
+            : `${e.nodeName},${(size / 3) | 0},${box.height | 0},${box.top | 0},${2 * Math.log(box.width) | 0}`,
+      };
+    }
+    return result;
   }
 
   private _refreshListenersIfNeeded() {
@@ -492,3 +580,74 @@ function removeEventListeners(listeners: (() => void)[]) {
 }
 
 module.exports = Recorder;
+
+class MultiMap<K, V> {
+  private _map: Map<K, V[]>;
+
+  constructor() {
+    this._map = new Map<K, V[]>();
+  }
+
+  set(key: K, value: V) {
+    let values = this._map.get(key);
+    if (!values) {
+      values = [];
+      this._map.set(key, values);
+    }
+    values.push(value);
+  }
+
+  get(key: K): V[] {
+    return this._map.get(key) || [];
+  }
+
+  has(key: K): boolean {
+    return this._map.has(key);
+  }
+
+  delete(key: K, value: V) {
+    const values = this._map.get(key);
+    if (!values)
+      return;
+    if (values.includes(value))
+      this._map.set(key, values.filter(v => value !== v));
+  }
+
+  deleteAll(key: K) {
+    this._map.delete(key);
+  }
+
+  hasValue(key: K, value: V): boolean {
+    const values = this._map.get(key);
+    if (!values)
+      return false;
+    return values.includes(value);
+  }
+
+  get size(): number {
+    return this._map.size;
+  }
+
+  [Symbol.iterator](): Iterator<[K, V[]]> {
+    return this._map[Symbol.iterator]();
+  }
+
+  keys(): IterableIterator<K> {
+    return this._map.keys();
+  }
+
+  values(): Iterable<V> {
+    const result: V[] = [];
+    for (const key of this.keys())
+      result.push(...this.get(key));
+    return result;
+  }
+
+  clear() {
+    this._map.clear();
+  }
+}
+
+function round(x: number): number {
+  return Math.round(x * 100);
+}
