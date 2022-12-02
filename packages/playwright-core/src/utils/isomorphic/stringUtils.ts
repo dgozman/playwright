@@ -63,16 +63,17 @@ function cssEscapeOne(s: string, i: number): string {
   return '\\' + s.charAt(i);
 }
 
-export function escapeForTextSelector(text: string | RegExp, exact: boolean): string {
+export function escapeForTextSelector(text: string | RegExp, exact: boolean, includeHidden: boolean): string {
+  const hiddenSuffix = includeHidden ? 'h' : '';
   if (typeof text !== 'string')
-    return String(text);
-  return `${JSON.stringify(text)}${exact ? 's' : 'i'}`;
+    return String(text) + hiddenSuffix;
+  return `${JSON.stringify(text)}${exact ? 's' : 'i'}${hiddenSuffix}`;
 }
 
-export function escapeForAttributeSelector(value: string, exact: boolean): string {
+export function escapeForAttributeSelector(value: string, exact: boolean, includeHidden: boolean): string {
   // TODO: this should actually be
   //   cssEscape(value).replace(/\\ /g, ' ')
   // However, our attribute selectors do not conform to CSS parsing spec,
   // so we escape them differently.
-  return `"${value.replace(/["]/g, '\\"')}"${exact ? 's' : 'i'}`;
+  return `"${value.replace(/["]/g, '\\"')}"${exact ? 's' : 'i'}${includeHidden ? 'h' : ''}`;
 }

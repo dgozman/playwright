@@ -2229,6 +2229,7 @@ Attribute name to get the value for.
 ### param: Page.getByAltText.text = %%-locator-get-by-text-text-%%
 
 ### option: Page.getByAltText.exact = %%-locator-get-by-text-exact-%%
+### option: Page.getByAltText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Page.getByLabel
 * since: v1.27
@@ -2239,6 +2240,7 @@ Attribute name to get the value for.
 ### param: Page.getByLabel.text = %%-locator-get-by-text-text-%%
 
 ### option: Page.getByLabel.exact = %%-locator-get-by-text-exact-%%
+### option: Page.getByLabel.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Page.getByPlaceholder
 * since: v1.27
@@ -2249,6 +2251,7 @@ Attribute name to get the value for.
 ### param: Page.getByPlaceholder.text = %%-locator-get-by-text-text-%%
 
 ### option: Page.getByPlaceholder.exact = %%-locator-get-by-text-exact-%%
+### option: Page.getByPlaceholder.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Page.getByRole
 * since: v1.27
@@ -2281,6 +2284,7 @@ Attribute name to get the value for.
 ### param: Page.getByText.text = %%-locator-get-by-text-text-%%
 
 ### option: Page.getByText.exact = %%-locator-get-by-text-exact-%%
+### option: Page.getByText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Page.getByTitle
 * since: v1.27
@@ -2291,6 +2295,7 @@ Attribute name to get the value for.
 ### param: Page.getByTitle.text = %%-locator-get-by-text-text-%%
 
 ### option: Page.getByTitle.exact = %%-locator-get-by-text-exact-%%
+### option: Page.getByTitle.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## async method: Page.goBack
 * since: v1.8

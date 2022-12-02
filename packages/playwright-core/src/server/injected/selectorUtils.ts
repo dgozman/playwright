@@ -15,6 +15,7 @@
  */
 
 import { type AttributeSelectorPart } from '../isomorphic/selectorParser';
+import { isElementVisible } from './domUtils';
 
 export function matchesComponentAttribute(obj: any, attr: AttributeSelectorPart) {
   for (const token of attr.jsonPath) {
@@ -82,18 +83,22 @@ export function createRegexTextMatcher(source: string, flags?: string): TextMatc
   };
 }
 
-export function shouldSkipForTextMatching(element: Element | ShadowRoot) {
-  return element.nodeName === 'SCRIPT' || element.nodeName === 'NOSCRIPT' || element.nodeName === 'STYLE' || document.head && document.head.contains(element);
+export function shouldSkipForTextMatching(element: Element | ShadowRoot, includeHidden: boolean) {
+  return element.nodeName === 'SCRIPT'
+      || element.nodeName === 'NOSCRIPT'
+      || element.nodeName === 'STYLE'
+      || document.head && document.head.contains(element)
+      || !includeHidden && element.nodeType === 1 /* Node.ELEMENT_NODE */ && !isElementVisible(element as Element);
 }
 
 export type ElementText = { full: string, immediate: string[] };
 export type TextMatcher = (text: ElementText) => boolean;
 
-export function elementText(cache: Map<Element | ShadowRoot, ElementText>, root: Element | ShadowRoot): ElementText {
+export function elementText(cache: Map<Element | ShadowRoot, ElementText>, root: Element | ShadowRoot, includeHidden: boolean): ElementText {
   let value = cache.get(root);
   if (value === undefined) {
     value = { full: '', immediate: [] };
-    if (!shouldSkipForTextMatching(root)) {
+    if (!shouldSkipForTextMatching(root, includeHidden)) {
       let currentImmediate = '';
       if ((root instanceof HTMLInputElement) && (root.type === 'submit' || root.type === 'button')) {
         value = { full: root.value, immediate: [root.value] };
@@ -107,13 +112,13 @@ export function elementText(cache: Map<Element | ShadowRoot, ElementText>, root:
               value.immediate.push(currentImmediate);
             currentImmediate = '';
             if (child.nodeType === Node.ELEMENT_NODE)
-              value.full += elementText(cache, child as Element).full;
+              value.full += elementText(cache, child as Element, includeHidden).full;
           }
         }
         if (currentImmediate)
           value.immediate.push(currentImmediate);
         if ((root as Element).shadowRoot)
-          value.full += elementText(cache, (root as Element).shadowRoot!).full;
+          value.full += elementText(cache, (root as Element).shadowRoot!, includeHidden).full;
       }
     }
     cache.set(root, value);
@@ -121,16 +126,16 @@ export function elementText(cache: Map<Element | ShadowRoot, ElementText>, root:
   return value;
 }
 
-export function elementMatchesText(cache: Map<Element | ShadowRoot, ElementText>, element: Element, matcher: TextMatcher): 'none' | 'self' | 'selfAndChildren' {
-  if (shouldSkipForTextMatching(element))
+export function elementMatchesText(cache: Map<Element | ShadowRoot, ElementText>, element: Element, matcher: TextMatcher, includeHidden: boolean): 'none' | 'self' | 'selfAndChildren' {
+  if (shouldSkipForTextMatching(element, includeHidden))
     return 'none';
-  if (!matcher(elementText(cache, element)))
+  if (!matcher(elementText(cache, element, includeHidden)))
     return 'none';
   for (let child = element.firstChild; child; child = child.nextSibling) {
-    if (child.nodeType === Node.ELEMENT_NODE && matcher(elementText(cache, child as Element)))
+    if (child.nodeType === Node.ELEMENT_NODE && matcher(elementText(cache, child as Element, includeHidden)))
       return 'selfAndChildren';
   }
-  if (element.shadowRoot && matcher(elementText(cache, element.shadowRoot)))
+  if (element.shadowRoot && matcher(elementText(cache, element.shadowRoot, includeHidden)))
     return 'selfAndChildren';
   return 'self';
 }

@@ -258,7 +258,7 @@ export class InjectedScript {
 
   private _createTextEngine(shadow: boolean, internal: boolean): SelectorEngine {
     const queryList = (root: SelectorRoot, selector: string): Element[] => {
-      const { matcher, kind } = createTextMatcher(selector, internal);
+      const { matcher, kind, includeHidden } = createTextMatcher(selector, internal);
       const result: Element[] = [];
       let lastDidNotMatchSelf: Element | null = null;
 
@@ -266,7 +266,7 @@ export class InjectedScript {
         // TODO: replace contains() with something shadow-dom-aware?
         if (kind === 'lax' && lastDidNotMatchSelf && lastDidNotMatchSelf.contains(element))
           return false;
-        const matches = elementMatchesText(this._evaluator._cacheText, element, matcher);
+        const matches = elementMatchesText(this._evaluator._cacheText, element, matcher, includeHidden);
         if (matches === 'none')
           lastDidNotMatchSelf = element;
         if (matches === 'self' || (matches === 'selfAndChildren' && kind === 'strict' && !internal))
@@ -295,8 +295,8 @@ export class InjectedScript {
         if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
           return [];
         const element = root as Element;
-        const text = elementText(evaluator._cacheText, element);
-        const { matcher } = createTextMatcher(selector, true);
+        const { matcher, includeHidden } = createTextMatcher(selector, true);
+        const text = elementText(evaluator._cacheText, element, includeHidden);
         return matcher(text) ? [element] : [];
       }
     };
@@ -306,12 +306,12 @@ export class InjectedScript {
     const evaluator = this._evaluator;
     return {
       queryAll: (root: SelectorRoot, selector: string): Element[] => {
-        const { matcher } = createTextMatcher(selector, true);
+        const { matcher, includeHidden } = createTextMatcher(selector, true);
         const result: Element[] = [];
         const labels = this._evaluator._queryCSS({ scope: root as Document | Element, pierceShadow: true }, 'label') as HTMLLabelElement[];
         for (const label of labels) {
           const control = label.control;
-          if (control && matcher(elementText(evaluator._cacheText, label)))
+          if (control && matcher(elementText(evaluator._cacheText, label, includeHidden)))
             result.push(control);
         }
         return result;
@@ -324,7 +324,7 @@ export class InjectedScript {
       const parsed = parseAttributeSelector(selector, true);
       if (parsed.name || parsed.attributes.length !== 1)
         throw new Error('Malformed attribute selector: ' + selector);
-      const { name, value, caseSensitive } = parsed.attributes[0];
+      const { name, value, caseSensitive, includeHidden } = parsed.attributes[0];
       const lowerCaseValue = caseSensitive ? null : value.toLowerCase();
       let matcher: (s: string) => boolean;
       if (value instanceof RegExp)
@@ -334,7 +334,11 @@ export class InjectedScript {
       else
         matcher = s => s.toLowerCase().includes(lowerCaseValue!);
       const elements = this._evaluator._queryCSS({ scope: root as Document | Element, pierceShadow: true }, `[${name}]`);
-      return elements.filter(e => matcher(e.getAttribute(name)!));
+      return elements.filter(e => {
+        if (!includeHidden && !this.isVisible(e))
+          return false;
+        return matcher(e.getAttribute(name)!);
+      });
     };
 
     return {
@@ -1198,7 +1202,7 @@ export class InjectedScript {
       } else if (expression === 'to.have.id') {
         received = element.id;
       } else if (expression === 'to.have.text') {
-        received = options.useInnerText ? (element as HTMLElement).innerText : elementText(new Map(), element).full;
+        received = options.useInnerText ? (element as HTMLElement).innerText : elementText(new Map(), element, !!options.includeHidden).full;
       } else if (expression === 'to.have.title') {
         received = document.title;
       } else if (expression === 'to.have.url') {
@@ -1255,7 +1259,7 @@ export class InjectedScript {
     // List of values.
     let received: string[] | undefined;
     if (expression === 'to.have.text.array' || expression === 'to.contain.text.array')
-      received = elements.map(e => options.useInnerText ? (e as HTMLElement).innerText : elementText(new Map(), e).full);
+      received = elements.map(e => options.useInnerText ? (e as HTMLElement).innerText : elementText(new Map(), e, !!options.includeHidden).full);
     else if (expression === 'to.have.class.array')
       received = elements.map(e => e.classList.toString());
 
@@ -1366,11 +1370,19 @@ function cssUnquote(s: string): string {
   return r.join('');
 }
 
-function createTextMatcher(selector: string, internal: boolean): { matcher: TextMatcher, kind: 'regex' | 'strict' | 'lax' } {
+function createTextMatcher(selector: string, internal: boolean): { matcher: TextMatcher, kind: 'regex' | 'strict' | 'lax', includeHidden: boolean } {
+  let includeHidden = true;
+  if (internal) {
+    includeHidden = false;
+    if (selector.endsWith('h')) {
+      includeHidden = true;
+      selector = selector.substring(0, selector.length - 1);
+    }
+  }
   if (selector[0] === '/' && selector.lastIndexOf('/') > 0) {
     const lastSlash = selector.lastIndexOf('/');
     const matcher: TextMatcher = createRegexTextMatcher(selector.substring(1, lastSlash), selector.substring(lastSlash + 1));
-    return { matcher, kind: 'regex' };
+    return { matcher, kind: 'regex', includeHidden };
   }
   const unquote = internal ? JSON.parse.bind(JSON) : cssUnquote;
   let strict = false;
@@ -1388,8 +1400,8 @@ function createTextMatcher(selector: string, internal: boolean): { matcher: Text
     strict = true;
   }
   if (strict)
-    return { matcher: internal ? createStrictFullTextMatcher(selector) : createStrictTextMatcher(selector), kind: 'strict' };
-  return { matcher: createLaxTextMatcher(selector), kind: 'lax' };
+    return { matcher: internal ? createStrictFullTextMatcher(selector) : createStrictTextMatcher(selector), kind: 'strict', includeHidden };
+  return { matcher: createLaxTextMatcher(selector), kind: 'lax', includeHidden };
 }
 
 class ExpectedTextMatcher {

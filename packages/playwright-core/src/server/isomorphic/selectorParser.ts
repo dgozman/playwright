@@ -219,6 +219,7 @@ export type AttributeSelectorPart = {
   op: AttributeSelectorOperator,
   value: any,
   caseSensitive: boolean,
+  includeHidden: boolean,
 };
 
 export type AttributeSelector = {
@@ -359,13 +360,14 @@ export function parseAttributeSelector(selector: string, allowUnquotedStrings: b
     // check property is truthy: [enabled]
     if (next() === ']') {
       eat1();
-      return { name: jsonPath.join('.'), jsonPath, op: '<truthy>', value: null, caseSensitive: false };
+      return { name: jsonPath.join('.'), jsonPath, op: '<truthy>', value: null, caseSensitive: false, includeHidden: false };
     }
 
     const operator = readOperator();
 
     let value = undefined;
     let caseSensitive = true;
+    let includeHidden = false;
     skipSpaces();
     if (next() === '/') {
       if (operator !== '=')
@@ -374,11 +376,11 @@ export function parseAttributeSelector(selector: string, allowUnquotedStrings: b
     } else if (next() === `'` || next() === `"`) {
       value = readQuotedString(next()).slice(1, -1);
       skipSpaces();
-      if (next() === 'i' || next() === 'I') {
-        caseSensitive = false;
-        eat1();
-      } else if (next() === 's' || next() === 'S') {
-        caseSensitive = true;
+      while (['i', 'I', 's', 'S', 'h', 'H'].includes(next())) {
+        if (next() === 'i' || next() === 'I')
+          caseSensitive = false;
+        if (next() === 'h' || next() === 'H')
+          includeHidden = true;
         eat1();
       }
     } else {
@@ -404,7 +406,7 @@ export function parseAttributeSelector(selector: string, allowUnquotedStrings: b
     eat1();
     if (operator !== '=' && typeof value !== 'string')
       throw new Error(`Error while parsing selector \`${selector}\` - cannot use ${operator} in attribute with non-string matching value - ${value}`);
-    return { name: jsonPath.join('.'), jsonPath, op: operator, value, caseSensitive };
+    return { name: jsonPath.join('.'), jsonPath, op: operator, value, caseSensitive, includeHidden };
   }
 
   const result: AttributeSelector = {

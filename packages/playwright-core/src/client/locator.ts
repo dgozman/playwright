@@ -42,7 +42,7 @@ export class Locator implements api.Locator {
     this._selector = selector;
 
     if (options?.hasText)
-      this._selector += ` >> internal:has-text=${escapeForTextSelector(options.hasText, false)}`;
+      this._selector += ` >> internal:has-text=${escapeForTextSelector(options.hasText, false, false)}`;
 
     if (options?.has) {
       const locator = options.has;
@@ -133,27 +133,27 @@ export class Locator implements api.Locator {
     return new Locator(this._frame, this._selector + ' >> ' + selector, options);
   }
 
-  getByTestId(testId: string): Locator {
-    return this.locator(getByTestIdSelector(testIdAttributeName(), testId));
+  getByTestId(testId: string, options?: { includeHidden?: boolean }): Locator {
+    return this.locator(getByTestIdSelector(testIdAttributeName(), testId, options));
   }
 
-  getByAltText(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByAltText(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByAltTextSelector(text, options));
   }
 
-  getByLabel(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByLabel(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByLabelSelector(text, options));
   }
 
-  getByPlaceholder(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByPlaceholder(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByPlaceholderSelector(text, options));
   }
 
-  getByText(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByText(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByTextSelector(text, options));
   }
 
-  getByTitle(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByTitle(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByTitleSelector(text, options));
   }
 
@@ -339,27 +339,27 @@ export class FrameLocator implements api.FrameLocator {
     return new Locator(this._frame, this._frameSelector + ' >> internal:control=enter-frame >> ' + selector, options);
   }
 
-  getByTestId(testId: string): Locator {
-    return this.locator(getByTestIdSelector(testIdAttributeName(), testId));
+  getByTestId(testId: string, options?: { includeHidden?: boolean }): Locator {
+    return this.locator(getByTestIdSelector(testIdAttributeName(), testId, options));
   }
 
-  getByAltText(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByAltText(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByAltTextSelector(text, options));
   }
 
-  getByLabel(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByLabel(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByLabelSelector(text, options));
   }
 
-  getByPlaceholder(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByPlaceholder(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByPlaceholderSelector(text, options));
   }
 
-  getByText(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByText(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByTextSelector(text, options));
   }
 
-  getByTitle(text: string | RegExp, options?: { exact?: boolean }): Locator {
+  getByTitle(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): Locator {
     return this.locator(getByTitleSelector(text, options));
   }
 

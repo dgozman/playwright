@@ -172,7 +172,7 @@ it('should report logs while waiting for hidden', async ({ page, server }) => {
 it('should report logs when the selector resolves to multiple elements', async ({ page, server }) => {
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`
-    <button style="display: none; position: absolute; top: 0px; left: 0px; width: 100%;">
+    <button disabled>
       Reset
     </button>
     <button>

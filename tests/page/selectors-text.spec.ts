@@ -373,6 +373,8 @@ it('should prioritize light dom over shadow dom in the same parent', async ({ pa
     const shadowSpan = document.createElement('span');
     shadowSpan.textContent = 'Hello from shadow';
     div.shadowRoot.appendChild(shadowSpan);
+    const slot = document.createElement('slot');
+    div.shadowRoot.appendChild(slot);
 
     const lightSpan = document.createElement('span');
     lightSpan.textContent = 'Hello from light';

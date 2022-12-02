@@ -962,6 +962,7 @@ Attribute name to get the value for.
 ### param: Frame.getByAltText.text = %%-locator-get-by-text-text-%%
 
 ### option: Frame.getByAltText.exact = %%-locator-get-by-text-exact-%%
+### option: Frame.getByAltText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Frame.getByLabel
 * since: v1.27
@@ -972,6 +973,7 @@ Attribute name to get the value for.
 ### param: Frame.getByLabel.text = %%-locator-get-by-text-text-%%
 
 ### option: Frame.getByLabel.exact = %%-locator-get-by-text-exact-%%
+### option: Frame.getByLabel.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Frame.getByPlaceholder
 * since: v1.27
@@ -982,6 +984,7 @@ Attribute name to get the value for.
 ### param: Frame.getByPlaceholder.text = %%-locator-get-by-text-text-%%
 
 ### option: Frame.getByPlaceholder.exact = %%-locator-get-by-text-exact-%%
+### option: Frame.getByPlaceholder.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Frame.getByRole
 * since: v1.27
@@ -1014,6 +1017,7 @@ Attribute name to get the value for.
 ### param: Frame.getByText.text = %%-locator-get-by-text-text-%%
 
 ### option: Frame.getByText.exact = %%-locator-get-by-text-exact-%%
+### option: Frame.getByText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Frame.getByTitle
 * since: v1.27
@@ -1024,6 +1028,7 @@ Attribute name to get the value for.
 ### param: Frame.getByTitle.text = %%-locator-get-by-text-text-%%
 
 ### option: Frame.getByTitle.exact = %%-locator-get-by-text-exact-%%
+### option: Frame.getByTitle.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## async method: Frame.goto
 * since: v1.8

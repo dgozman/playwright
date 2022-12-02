@@ -28,34 +28,34 @@ export type ByRoleOptions = {
   selected?: boolean;
 };
 
-function getByAttributeTextSelector(attrName: string, text: string | RegExp, options?: { exact?: boolean }): string {
+function getByAttributeTextSelector(attrName: string, text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): string {
   if (!isString(text))
     return `internal:attr=[${attrName}=${text}]`;
-  return `internal:attr=[${attrName}=${escapeForAttributeSelector(text, options?.exact || false)}]`;
+  return `internal:attr=[${attrName}=${escapeForAttributeSelector(text, !!options?.exact, !!options?.includeHidden)}]`;
 }
 
-export function getByTestIdSelector(testIdAttributeName: string, testId: string): string {
-  return `internal:testid=[${testIdAttributeName}=${escapeForAttributeSelector(testId, true)}]`;
+export function getByTestIdSelector(testIdAttributeName: string, testId: string, options?: { includeHidden?: boolean }): string {
+  return `internal:testid=[${testIdAttributeName}=${escapeForAttributeSelector(testId, true, !!options?.includeHidden)}]`;
 }
 
-export function getByLabelSelector(text: string | RegExp, options?: { exact?: boolean }): string {
-  return 'internal:label=' + escapeForTextSelector(text, !!options?.exact);
+export function getByLabelSelector(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): string {
+  return 'internal:label=' + escapeForTextSelector(text, !!options?.exact, !!options?.includeHidden);
 }
 
-export function getByAltTextSelector(text: string | RegExp, options?: { exact?: boolean }): string {
+export function getByAltTextSelector(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): string {
   return getByAttributeTextSelector('alt', text, options);
 }
 
-export function getByTitleSelector(text: string | RegExp, options?: { exact?: boolean }): string {
+export function getByTitleSelector(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): string {
   return getByAttributeTextSelector('title', text, options);
 }
 
-export function getByPlaceholderSelector(text: string | RegExp, options?: { exact?: boolean }): string {
+export function getByPlaceholderSelector(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): string {
   return getByAttributeTextSelector('placeholder', text, options);
 }
 
-export function getByTextSelector(text: string | RegExp, options?: { exact?: boolean }): string {
-  return 'internal:text=' + escapeForTextSelector(text, !!options?.exact);
+export function getByTextSelector(text: string | RegExp, options?: { exact?: boolean, includeHidden?: boolean }): string {
+  return 'internal:text=' + escapeForTextSelector(text, !!options?.exact, !!options?.includeHidden);
 }
 
 export function getByRoleSelector(role: string, options: ByRoleOptions = {}): string {
@@ -73,7 +73,7 @@ export function getByRoleSelector(role: string, options: ByRoleOptions = {}): st
   if (options.level !== undefined)
     props.push(['level', String(options.level)]);
   if (options.name !== undefined)
-    props.push(['name', isString(options.name) ? escapeForAttributeSelector(options.name, !!options.exact) : String(options.name)]);
+    props.push(['name', isString(options.name) ? escapeForAttributeSelector(options.name, !!options.exact, false) : String(options.name)]);
   if (options.pressed !== undefined)
     props.push(['pressed', String(options.pressed)]);
   return `internal:role=${role}${props.map(([n, v]) => `[${n}=${v}]`).join('')}`;

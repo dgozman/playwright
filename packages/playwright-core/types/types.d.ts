@@ -2460,6 +2460,11 @@ export interface Page {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -2480,6 +2485,11 @@ export interface Page {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -2499,6 +2509,11 @@ export interface Page {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -2643,6 +2658,11 @@ export interface Page {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -2662,6 +2682,11 @@ export interface Page {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -5716,6 +5741,11 @@ export interface Frame {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -5736,6 +5766,11 @@ export interface Frame {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -5755,6 +5790,11 @@ export interface Frame {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -5899,6 +5939,11 @@ export interface Frame {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -5918,6 +5963,11 @@ export interface Frame {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -10417,6 +10467,11 @@ export interface Locator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -10437,6 +10492,11 @@ export interface Locator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -10456,6 +10516,11 @@ export interface Locator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -10600,6 +10665,11 @@ export interface Locator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -10619,6 +10689,11 @@ export interface Locator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -15938,6 +16013,11 @@ export interface FrameLocator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -15958,6 +16038,11 @@ export interface FrameLocator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -15977,6 +16062,11 @@ export interface FrameLocator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -16121,6 +16211,11 @@ export interface FrameLocator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**
@@ -16140,6 +16235,11 @@ export interface FrameLocator {
      * regular expression. Note that exact match still trims whitespace.
      */
     exact?: boolean;
+
+    /**
+     * Whether to include hidden elements. Defaults to false.
+     */
+    includeHidden?: boolean;
   }): Locator;
 
   /**

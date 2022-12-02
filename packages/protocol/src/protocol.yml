@@ -2128,6 +2128,7 @@ Frame:
         expectedNumber: number?
         expectedValue: SerializedArgument?
         useInnerText: boolean?
+        includeHidden: boolean?
         isNot: boolean
         timeout: number?
       returns:

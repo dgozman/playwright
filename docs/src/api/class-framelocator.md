@@ -121,6 +121,7 @@ in that iframe.
 ### param: FrameLocator.getByAltText.text = %%-locator-get-by-text-text-%%
 
 ### option: FrameLocator.getByAltText.exact = %%-locator-get-by-text-exact-%%
+### option: FrameLocator.getByAltText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: FrameLocator.getByLabel
 * since: v1.27
@@ -131,6 +132,7 @@ in that iframe.
 ### param: FrameLocator.getByLabel.text = %%-locator-get-by-text-text-%%
 
 ### option: FrameLocator.getByLabel.exact = %%-locator-get-by-text-exact-%%
+### option: FrameLocator.getByLabel.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: FrameLocator.getByPlaceholder
 * since: v1.27
@@ -141,6 +143,7 @@ in that iframe.
 ### param: FrameLocator.getByPlaceholder.text = %%-locator-get-by-text-text-%%
 
 ### option: FrameLocator.getByPlaceholder.exact = %%-locator-get-by-text-exact-%%
+### option: FrameLocator.getByPlaceholder.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: FrameLocator.getByRole
 * since: v1.27
@@ -173,6 +176,7 @@ in that iframe.
 ### param: FrameLocator.getByText.text = %%-locator-get-by-text-text-%%
 
 ### option: FrameLocator.getByText.exact = %%-locator-get-by-text-exact-%%
+### option: FrameLocator.getByText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: FrameLocator.getByTitle
 * since: v1.27
@@ -183,6 +187,7 @@ in that iframe.
 ### param: FrameLocator.getByTitle.text = %%-locator-get-by-text-text-%%
 
 ### option: FrameLocator.getByTitle.exact = %%-locator-get-by-text-exact-%%
+### option: FrameLocator.getByTitle.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: FrameLocator.last
 * since: v1.17

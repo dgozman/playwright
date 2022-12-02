@@ -703,6 +703,7 @@ Attribute name to get the value for.
 ### param: Locator.getByAltText.text = %%-locator-get-by-text-text-%%
 
 ### option: Locator.getByAltText.exact = %%-locator-get-by-text-exact-%%
+### option: Locator.getByAltText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Locator.getByLabel
 * since: v1.27
@@ -713,6 +714,7 @@ Attribute name to get the value for.
 ### param: Locator.getByLabel.text = %%-locator-get-by-text-text-%%
 
 ### option: Locator.getByLabel.exact = %%-locator-get-by-text-exact-%%
+### option: Locator.getByLabel.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Locator.getByPlaceholder
 * since: v1.27
@@ -723,6 +725,7 @@ Attribute name to get the value for.
 ### param: Locator.getByPlaceholder.text = %%-locator-get-by-text-text-%%
 
 ### option: Locator.getByPlaceholder.exact = %%-locator-get-by-text-exact-%%
+### option: Locator.getByPlaceholder.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Locator.getByRole
 * since: v1.27
@@ -755,6 +758,7 @@ Attribute name to get the value for.
 ### param: Locator.getByText.text = %%-locator-get-by-text-text-%%
 
 ### option: Locator.getByText.exact = %%-locator-get-by-text-exact-%%
+### option: Locator.getByText.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## method: Locator.getByTitle
 * since: v1.27
@@ -765,6 +769,7 @@ Attribute name to get the value for.
 ### param: Locator.getByTitle.text = %%-locator-get-by-text-text-%%
 
 ### option: Locator.getByTitle.exact = %%-locator-get-by-text-exact-%%
+### option: Locator.getByTitle.includeHidden = %%-locator-get-by-text-includeHidden-%%
 
 ## async method: Locator.highlight
 * since: v1.20

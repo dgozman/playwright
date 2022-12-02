@@ -78,9 +78,9 @@ function parseLocator(locator: string, testIdAttributeName: string): string {
       .replace(/new[\w]+\.[\w]+options\(\)/g, '')
       .replace(/\.set([\w]+)\(([^)]+)\)/g, (_, group1, group2) => ',' + group1.toLowerCase() + '=' + group2.toLowerCase())
       .replace(/:/g, '=')
-      .replace(/,re\.ignorecase/g, 'i')
-      .replace(/,pattern.case_insensitive/g, 'i')
-      .replace(/,regexoptions.ignorecase/g, 'i')
+      .replace(/,re\.ignorecase/g, 'i!')
+      .replace(/,pattern.case_insensitive/g, 'i!')
+      .replace(/,regexoptions.ignorecase/g, 'i!')
       .replace(/re.compile\(([^)]+)\)/g, '$1') // Python has regex strings as r"foo"
       .replace(/pattern.compile\(([^)]+)\)/g, 'r$1')
       .replace(/newregex\(([^)]+)\)/g, 'r$1')
@@ -149,7 +149,9 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
       .replace(/filter\(,?hastext=([^)]+)\)/g, 'internal:has-text=$1')
       .replace(/filter\(,?has2=([^)]+)\)/g, 'internal:has=$1')
       .replace(/,exact=false/g, '')
-      .replace(/,exact=true/g, 's')
+      .replace(/,exact=true/g, 's!')
+      .replace(/,includehidden=false/g, '')
+      .replace(/,includehidden=true/g, 'h!')
       .replace(/\,/g, '][');
 
   const parts = template.split('.');
@@ -169,19 +171,19 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
       return t.replace(/\$(\d+)/g, (_, ordinal) => { const param = params[+ordinal - 1]; return param.text; });
     t = t.includes('[') ? t.replace(/\]/, '') + ']' : t;
     t = t
-        .replace(/(?:r)\$(\d+)(i)?/g, (_, ordinal, suffix) => {
+        .replace(/(?:r)\$(\d+)((i!|h!)*)/g, (_, ordinal, suffix) => {
           const param = params[+ordinal - 1];
           if (t.startsWith('internal:attr') || t.startsWith('internal:testid') || t.startsWith('internal:role'))
             return new RegExp(param.text) + (suffix || '');
-          return escapeForTextSelector(new RegExp(param.text, suffix), false);
+          return escapeForTextSelector(new RegExp(param.text, suffix), false, false);
         })
-        .replace(/\$(\d+)(i|s)?/g, (_, ordinal, suffix) => {
+        .replace(/\$(\d+)((i!|h!|s!)*)/g, (_, ordinal, suffix) => {
           const param = params[+ordinal - 1];
           if (t.startsWith('internal:has='))
             return param.text;
           if (t.startsWith('internal:attr') || t.startsWith('internal:testid') || t.startsWith('internal:role'))
-            return escapeForAttributeSelector(param.text, suffix === 's');
-          return escapeForTextSelector(param.text, suffix === 's');
+            return escapeForAttributeSelector(param.text, suffix.includes('s'), suffix.includes('h'));
+          return escapeForTextSelector(param.text, suffix.includes('s'), suffix.includes('h'));
         });
     return t;
   }).join(' >> ');

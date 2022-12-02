@@ -33,7 +33,7 @@ class Locator {
     (this as any)[selectorSymbol] = selector;
     (this as any)[injectedScriptSymbol] = injectedScript;
     if (options?.hasText)
-      selector += ` >> internal:has-text=${escapeForTextSelector(options.hasText, false)}`;
+      selector += ` >> internal:has-text=${escapeForTextSelector(options.hasText, false, false)}`;
     if (options?.has)
       selector += ` >> internal:has=` + JSON.stringify((options.has as any)[selectorSymbol]);
     if (selector) {
@@ -46,7 +46,7 @@ class Locator {
     self.locator = (selector: string, options?: { hasText?: string | RegExp, has?: Locator }): Locator => {
       return new Locator(injectedScript, selectorBase ? selectorBase + ' >> ' + selector : selector, options);
     };
-    self.getByTestId = (testId: string): Locator => self.locator(getByTestIdSelector(injectedScript.testIdAttributeNameForStrictErrorAndConsoleCodegen(), testId));
+    self.getByTestId = (testId: string, options?: { includeHidden?: boolean }): Locator => self.locator(getByTestIdSelector(injectedScript.testIdAttributeNameForStrictErrorAndConsoleCodegen(), testId, options));
     self.getByAltText = (text: string | RegExp, options?: { exact?: boolean }): Locator => self.locator(getByAltTextSelector(text, options));
     self.getByLabel = (text: string | RegExp, options?: { exact?: boolean }): Locator => self.locator(getByLabelSelector(text, options));
     self.getByPlaceholder = (text: string | RegExp, options?: { exact?: boolean }): Locator => self.locator(getByPlaceholderSelector(text, options));

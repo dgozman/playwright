@@ -22,7 +22,7 @@ export type Language = 'javascript' | 'python' | 'java' | 'csharp';
 export type LocatorType = 'default' | 'role' | 'text' | 'label' | 'placeholder' | 'alt' | 'title' | 'test-id' | 'nth' | 'first' | 'last' | 'has-text' | 'has' | 'frame';
 export type LocatorBase = 'page' | 'locator' | 'frame-locator';
 
-type LocatorOptions = { attrs?: { name: string, value: string | boolean | number}[], exact?: boolean, name?: string | RegExp };
+type LocatorOptions = { attrs?: { name: string, value: string | boolean | number }[], exact?: boolean, includeHidden?: boolean, accessibleName?: string | RegExp };
 export interface LocatorFactory {
   generateLocator(base: LocatorBase, kind: LocatorType, body: string | RegExp, options?: LocatorOptions): string;
 }
@@ -60,13 +60,13 @@ function innerAsLocator(factory: LocatorFactory, parsed: ParsedSelector, isFrame
       continue;
     }
     if (part.name === 'internal:text') {
-      const { exact, text } = detectExact(part.body as string);
-      tokens.push(factory.generateLocator(base, 'text', text, { exact }));
+      const { exact, text, includeHidden } = detectExact(part.body as string);
+      tokens.push(factory.generateLocator(base, 'text', text, { exact, includeHidden }));
       continue;
     }
     if (part.name === 'internal:has-text') {
-      const { exact, text } = detectExact(part.body as string);
-      tokens.push(factory.generateLocator(base, 'has-text', text, { exact }));
+      const { exact, text, includeHidden } = detectExact(part.body as string);
+      tokens.push(factory.generateLocator(base, 'has-text', text, { exact, includeHidden }));
       continue;
     }
     if (part.name === 'internal:has') {
@@ -75,8 +75,8 @@ function innerAsLocator(factory: LocatorFactory, parsed: ParsedSelector, isFrame
       continue;
     }
     if (part.name === 'internal:label') {
-      const { exact, text } = detectExact(part.body as string);
-      tokens.push(factory.generateLocator(base, 'label', text, { exact }));
+      const { exact, text, includeHidden } = detectExact(part.body as string);
+      tokens.push(factory.generateLocator(base, 'label', text, { exact, includeHidden }));
       continue;
     }
     if (part.name === 'internal:role') {
@@ -85,7 +85,7 @@ function innerAsLocator(factory: LocatorFactory, parsed: ParsedSelector, isFrame
       for (const attr of attrSelector.attributes) {
         if (attr.name === 'name') {
           options.exact = attr.caseSensitive;
-          options.name = attr.value;
+          options.accessibleName = attr.value;
         } else {
           if (attr.name === 'level' && typeof attr.value === 'string')
             attr.value = +attr.value;
@@ -97,25 +97,25 @@ function innerAsLocator(factory: LocatorFactory, parsed: ParsedSelector, isFrame
     }
     if (part.name === 'internal:testid') {
       const attrSelector = parseAttributeSelector(part.body as string, true);
-      const { value } = attrSelector.attributes[0];
-      tokens.push(factory.generateLocator(base, 'test-id', value));
+      const { value, includeHidden } = attrSelector.attributes[0];
+      tokens.push(factory.generateLocator(base, 'test-id', value, { includeHidden }));
       continue;
     }
     if (part.name === 'internal:attr') {
       const attrSelector = parseAttributeSelector(part.body as string, true);
-      const { name, value, caseSensitive } = attrSelector.attributes[0];
+      const { name, value, caseSensitive, includeHidden } = attrSelector.attributes[0];
       const text = value as string | RegExp;
       const exact = !!caseSensitive;
       if (name === 'placeholder') {
-        tokens.push(factory.generateLocator(base, 'placeholder', text, { exact }));
+        tokens.push(factory.generateLocator(base, 'placeholder', text, { exact, includeHidden }));
         continue;
       }
       if (name === 'alt') {
-        tokens.push(factory.generateLocator(base, 'alt', text, { exact }));
+        tokens.push(factory.generateLocator(base, 'alt', text, { exact, includeHidden }));
         continue;
       }
       if (name === 'title') {
-        tokens.push(factory.generateLocator(base, 'title', text, { exact }));
+        tokens.push(factory.generateLocator(base, 'title', text, { exact, includeHidden }));
         continue;
       }
     }
@@ -135,7 +135,12 @@ function innerAsLocator(factory: LocatorFactory, parsed: ParsedSelector, isFrame
   return tokens.join('.');
 }
 
-function detectExact(text: string): { exact?: boolean, text: string | RegExp } {
+function detectExact(text: string): { exact?: boolean, includeHidden?: boolean, text: string | RegExp } {
+  let includeHidden = false;
+  if (text.endsWith('h')) {
+    includeHidden = true;
+    text = text.substring(0, text.length - 1);
+  }
   let exact = false;
   const match = text.match(/^\/(.*)\/([igm]*)$/);
   if (match)
@@ -150,7 +155,7 @@ function detectExact(text: string): { exact?: boolean, text: string | RegExp } {
     text = JSON.parse(text.substring(0, text.length - 1));
     exact = false;
   }
-  return { exact, text };
+  return { exact, text, includeHidden };
 }
 
 export class JavaScriptLocatorFactory implements LocatorFactory {
@@ -168,10 +173,10 @@ export class JavaScriptLocatorFactory implements LocatorFactory {
         return `last()`;
       case 'role':
         const attrs: string[] = [];
-        if (isRegExp(options.name)) {
-          attrs.push(`name: ${options.name}`);
-        } else if (typeof options.name === 'string') {
-          attrs.push(`name: ${this.quote(options.name)}`);
+        if (isRegExp(options.accessibleName)) {
+          attrs.push(`name: ${options.accessibleName}`);
+        } else if (typeof options.accessibleName === 'string') {
+          attrs.push(`name: ${this.quote(options.accessibleName)}`);
           if (options.exact)
             attrs.push(`exact: true`);
         }
@@ -232,10 +237,10 @@ export class PythonLocatorFactory implements LocatorFactory {
         return `last`;
       case 'role':
         const attrs: string[] = [];
-        if (isRegExp(options.name)) {
-          attrs.push(`name=${this.regexToString(options.name)}`);
-        } else if (typeof options.name === 'string') {
-          attrs.push(`name=${this.quote(options.name)}`);
+        if (isRegExp(options.accessibleName)) {
+          attrs.push(`name=${this.regexToString(options.accessibleName)}`);
+        } else if (typeof options.accessibleName === 'string') {
+          attrs.push(`name=${this.quote(options.accessibleName)}`);
           if (options.exact)
             attrs.push(`exact=True`);
         }
@@ -313,10 +318,10 @@ export class JavaLocatorFactory implements LocatorFactory {
         return `last()`;
       case 'role':
         const attrs: string[] = [];
-        if (isRegExp(options.name)) {
-          attrs.push(`.setName(${this.regexToString(options.name)})`);
-        } else if (typeof options.name === 'string') {
-          attrs.push(`.setName(${this.quote(options.name)})`);
+        if (isRegExp(options.accessibleName)) {
+          attrs.push(`.setName(${this.regexToString(options.accessibleName)})`);
+        } else if (typeof options.accessibleName === 'string') {
+          attrs.push(`.setName(${this.quote(options.accessibleName)})`);
           if (options.exact)
             attrs.push(`.setExact(true)`);
         }
@@ -384,10 +389,10 @@ export class CSharpLocatorFactory implements LocatorFactory {
         return `Last`;
       case 'role':
         const attrs: string[] = [];
-        if (isRegExp(options.name)) {
-          attrs.push(`NameRegex = ${this.regexToString(options.name)}`);
-        } else if (typeof options.name === 'string') {
-          attrs.push(`Name = ${this.quote(options.name)}`);
+        if (isRegExp(options.accessibleName)) {
+          attrs.push(`NameRegex = ${this.regexToString(options.accessibleName)}`);
+        } else if (typeof options.accessibleName === 'string') {
+          attrs.push(`Name = ${this.quote(options.accessibleName)}`);
           if (options.exact)
             attrs.push(`Exact = true`);
         }

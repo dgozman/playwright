@@ -432,7 +432,7 @@ const textEngine: SelectorEngine = {
     if (args.length !== 1 || typeof args[0] !== 'string')
       throw new Error(`"text" engine expects a single string`);
     const matcher = createLaxTextMatcher(args[0]);
-    return elementMatchesText((evaluator as SelectorEvaluatorImpl)._cacheText, element, matcher) === 'self';
+    return elementMatchesText((evaluator as SelectorEvaluatorImpl)._cacheText, element, matcher, true /* includeHidden */) === 'self';
   },
 };
 
@@ -441,7 +441,7 @@ const textIsEngine: SelectorEngine = {
     if (args.length !== 1 || typeof args[0] !== 'string')
       throw new Error(`"text-is" engine expects a single string`);
     const matcher = createStrictTextMatcher(args[0]);
-    return elementMatchesText((evaluator as SelectorEvaluatorImpl)._cacheText, element, matcher) !== 'none';
+    return elementMatchesText((evaluator as SelectorEvaluatorImpl)._cacheText, element, matcher, true /* includeHidden */) !== 'none';
   },
 };
 
@@ -450,7 +450,7 @@ const textMatchesEngine: SelectorEngine = {
     if (args.length === 0 || typeof args[0] !== 'string' || args.length > 2 || (args.length === 2 && typeof args[1] !== 'string'))
       throw new Error(`"text-matches" engine expects a regexp body and optional regexp flags`);
     const matcher = createRegexTextMatcher(args[0], args.length === 2 ? args[1] : undefined);
-    return elementMatchesText((evaluator as SelectorEvaluatorImpl)._cacheText, element, matcher) === 'self';
+    return elementMatchesText((evaluator as SelectorEvaluatorImpl)._cacheText, element, matcher, true /* includeHidden */) === 'self';
   },
 };
 
@@ -458,10 +458,10 @@ const hasTextEngine: SelectorEngine = {
   matches(element: Element, args: (string | number | Selector)[], context: QueryContext, evaluator: SelectorEvaluator): boolean {
     if (args.length !== 1 || typeof args[0] !== 'string')
       throw new Error(`"has-text" engine expects a single string`);
-    if (shouldSkipForTextMatching(element))
+    if (shouldSkipForTextMatching(element, true /* includeHidden */))
       return false;
     const matcher = createLaxTextMatcher(args[0]);
-    return matcher(elementText((evaluator as SelectorEvaluatorImpl)._cacheText, element));
+    return matcher(elementText((evaluator as SelectorEvaluatorImpl)._cacheText, element, true /* includeHidden */));
   },
 };
 
