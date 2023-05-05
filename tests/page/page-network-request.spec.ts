@@ -141,13 +141,13 @@ it('should get the same headers as the server CORS', async ({ page, server, brow
   expect(headers).toEqual(serverRequest.headers);
 });
 
-it('should not get preflight CORS requests when intercepting', async ({ page, server, browserName, isAndroid }) => {
+it('should report CORS preflights but not intercept them', async ({ page, server, browserName, isAndroid }) => {
   it.fail(isAndroid, 'Playwright does not get CORS pre-flight on Android');
   await page.goto(server.PREFIX + '/empty.html');
 
-  const requests = [];
+  const serverRequests = [];
   server.setRoute('/something', (request, response) => {
-    requests.push(request.method);
+    serverRequests.push(request.method);
     if (request.method === 'OPTIONS') {
       response.writeHead(204, {
         'Access-Control-Allow-Origin': '*',
@@ -161,7 +161,12 @@ it('should not get preflight CORS requests when intercepting', async ({ page, se
     response.writeHead(200, { 'Access-Control-Allow-Origin': '*' });
     response.end('done');
   });
+
+  const clientRequests = [];
+  page.on('request', r => clientRequests.push(r.method()));
+
   // First check the browser will send preflight request when interception is OFF.
+  // Both requests are reported to the client.
   {
     const text = await page.evaluate(async url => {
       const data = await fetch(url, {
@@ -171,12 +176,16 @@ it('should not get preflight CORS requests when intercepting', async ({ page, se
       return data.text();
     }, server.CROSS_PROCESS_PREFIX + '/something');
     expect(text).toBe('done');
-    expect(requests).toEqual(['OPTIONS', 'DELETE']);
+    expect(serverRequests).toEqual(['OPTIONS', 'DELETE']);
+    expect(clientRequests).toEqual(['DELETE', 'OPTIONS']);
   }
 
   // Now check the browser will NOT send preflight request when interception is ON.
+  // Only the original request is reported to the client.
   {
-    requests.length = 0;
+    serverRequests.length = 0;
+    clientRequests.length = 0;
+
     const routed = [];
     await page.route('**/something', route => {
       routed.push(route.request().method());
@@ -193,10 +202,11 @@ it('should not get preflight CORS requests when intercepting', async ({ page, se
     expect(text).toBe('done');
     // Check that there was no preflight (OPTIONS) request.
     expect(routed).toEqual(['DELETE']);
+    expect(clientRequests).toEqual(['DELETE']);
     if (browserName === 'firefox')
-      expect(requests).toEqual(['OPTIONS', 'DELETE']);
+      expect(serverRequests).toEqual(['OPTIONS', 'DELETE']);
     else
-      expect(requests).toEqual(['DELETE']);
+      expect(serverRequests).toEqual(['DELETE']);
   }
 });
 
