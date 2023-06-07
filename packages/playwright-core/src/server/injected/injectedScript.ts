@@ -566,6 +566,82 @@ export class InjectedScript {
     return element;
   }
 
+  checkElementStates(node: Node, states: ElementState[]): Promise<true | ElementState | 'error:notconnected'> {
+    let fulfill = (result: true | ElementState | 'error:notconnected') => {};
+    let reject = (error: Error) => {};
+    const resultPromise = new Promise<true | ElementState | 'error:notconnected'>((f, r) => { fulfill = f; reject = r; });
+    const continuePolling = Symbol('continuePolling');
+
+    let lastRect: { x: number, y: number, width: number, height: number } | undefined;
+    let counter = 0;
+    let samePositionCounter = 0;
+    let lastTime = 0;
+
+    const checkStates = () => {
+      for (const state of states) {
+        if (state !== 'stable') {
+          const result = this.elementState(node, state);
+          if (typeof result !== 'boolean')
+            return result;
+          if (!result)
+            return state;
+          continue;
+        }
+
+        const element = this.retarget(node, 'no-follow-label');
+        if (!element)
+          return 'error:notconnected';
+
+        // First raf happens in the same animation frame as evaluation, so it does not produce
+        // any client rect difference compared to synchronous call. We skip the synchronous call
+        // and only force layout during actual rafs as a small optimisation.
+        if (++counter === 1)
+          return continuePolling;
+
+        // Drop frames that are shorter than 16ms - WebKit Win bug.
+        const time = performance.now();
+        if (this._stableRafCount > 1 && time - lastTime < 15)
+          return continuePolling;
+        lastTime = time;
+
+        const clientRect = element.getBoundingClientRect();
+        const rect = { x: clientRect.top, y: clientRect.left, width: clientRect.width, height: clientRect.height };
+        const samePosition = lastRect && rect.x === lastRect.x && rect.y === lastRect.y && rect.width === lastRect.width && rect.height === lastRect.height;
+        if (samePosition)
+          ++samePositionCounter;
+        else
+          samePositionCounter = 0;
+        lastRect = rect;
+
+        // First iteration we skip, see |++counter === 1| above.
+        // Second iteration we gather the base position.
+        // Third iteration we actually check the stability.
+        if (counter >= this._stableRafCount + 2) {
+          if (samePositionCounter >= this._stableRafCount)
+            continue;
+          return 'stable';
+        }
+      }
+
+      return true;
+    };
+
+    const onRaf = () => {
+      try {
+        const result = checkStates();
+        if (result === continuePolling)
+          requestAnimationFrame(onRaf);
+        else
+          fulfill(result);
+      } catch (e) {
+        reject(e);
+      }
+    };
+
+    onRaf();
+    return resultPromise;
+  }
+
   waitForElementStatesAndPerformAction<T>(node: Node, states: ElementState[], force: boolean | undefined,
     callback: (node: Node, progress: InjectedScriptProgress) => T | symbol): InjectedScriptPoll<T | 'error:notconnected'> {
     let lastRect: { x: number, y: number, width: number, height: number } | undefined;
