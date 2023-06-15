@@ -58,6 +58,8 @@ const kRoleWithoutNameScore = 510;
 const kCSSInputTypeNameScore = 520;
 const kCSSTagNameScore = 530;
 const kNthScore = 10000;
+const kRelativeXPathBaseScore = 1000;
+const kRelativeXPathStepScore = 500;
 const kCSSFallbackScore = 10000000;
 
 export type GenerateSelectorOptions = {
@@ -91,7 +93,84 @@ function filterRegexTokens(textCandidates: SelectorToken[][]): SelectorToken[][]
   return textCandidates.filter(c => c[0].selector[0] !== '/');
 }
 
+function getAncestorChain(descendant: Element, ancestor: Element) {
+  const result: Element[] = [];
+  while (descendant !== ancestor) {
+    result.push(descendant);
+    descendant = descendant.parentElement!;
+  }
+  return result.reverse();
+}
+
+function generateRelativeXPath(from: Element, to: Element): SelectorToken[] | null {
+  if (from.contains(to) || to.contains(from))
+    return null;
+  let parent: Element | null = from;
+  while (parent && !parent.contains(to))
+    parent = parent.parentElement;
+  if (!parent)
+    return null;
+  const fromChain = getAncestorChain(from, parent);
+  const toChain = getAncestorChain(to, parent);
+  const path: string[] = new Array(fromChain.length - 1).fill('..');
+  let score = kRelativeXPathBaseScore;
+  const children = [...parent.children];
+  const fromIndex = children.indexOf(fromChain[0]);
+  const toIndex = children.indexOf(toChain[0]);
+  if (fromIndex < toIndex)
+    path.push(`following-sibling::*[${toIndex - fromIndex}]`);
+  else
+    path.push(`preceding-sibling::*[${fromIndex - toIndex}]`);
+  score += kRelativeXPathStepScore * Math.abs(fromIndex - toIndex);
+  for (let i = 0; i < toChain.length - 1; i++) {
+    const child = toChain[i + 1];
+    const children = [...toChain[i].children].filter(e => e.nodeName === child.nodeName);
+    const index = children.indexOf(child) + 1;
+    path.push(`${child.nodeName.toLowerCase()}[${index}]`);
+    score += kRelativeXPathStepScore * index * index;
+  }
+  return [{ engine: 'xpath', selector: path.join('/'), score }];
+}
+
 function generateSelectorFor(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions): SelectorToken[] {
+  let best = generateSimpleSelectorFor(injectedScript, targetElement, options) || cssFallback(injectedScript, targetElement, options);
+
+  let counter = 200;
+  const visit = (element: Element, depth: number) => {
+    if (depth > 0) {
+      const relative = generateRelativeXPath(element, targetElement);
+      if (relative) {
+        const tokens = generateSimpleSelectorFor(injectedScript, element, { ...options, skipParents: true });
+        if (!tokens) {
+          // Let's first compare scores without calculating the css fallback to make things faster.
+          if (combineScores([{ engine: 'css', selector: '*', score: kCSSFallbackScore }, ...relative]) < combineScores(best))
+            best = [...cssFallback(injectedScript, targetElement, options), ...relative];
+        } else {
+          const combined = [...tokens, ...relative];
+          if (combineScores(combined) < combineScores(best))
+            best = combined;
+        }
+      }
+    }
+    if (!--counter || depth >= 4)
+      return;
+    for (let child = element.firstElementChild; child; child = child.nextElementSibling)
+      visit(child, depth + 1);
+  };
+
+  let root: Element = targetElement;
+  for (let depth = 0; depth < 2; depth++) {
+    const parent = root.parentElement;
+    if (!parent)
+      break;
+    root = parent;
+  }
+  visit(root, 0);
+
+  return best!;
+}
+
+function generateSimpleSelectorFor(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions & { skipParents?: boolean }): SelectorToken[] | null {
   if (options.root && !isInsideScope(options.root, targetElement))
     throw new Error(`Target element must belong to the root's subtree`);
 
@@ -114,6 +193,8 @@ function generateSelectorFor(injectedScript: InjectedScript, targetElement: Elem
 
     // First check all text and non-text candidates for the element.
     let result = chooseFirstSelector(injectedScript, options.root ?? targetElement.ownerDocument, element, [...textCandidates, ...noTextCandidates], allowNthMatch);
+    if (options.skipParents)
+      return result;
 
     // Do not use regex for chained selectors (for performance).
     textCandidates = filterRegexTokens(textCandidates);
@@ -170,7 +251,7 @@ function generateSelectorFor(injectedScript: InjectedScript, targetElement: Elem
     return value;
   };
 
-  return calculateCached(targetElement, true) || cssFallback(injectedScript, targetElement, options);
+  return calculateCached(targetElement, true);
 }
 
 function buildNoTextCandidates(injectedScript: InjectedScript, element: Element, options: GenerateSelectorOptions): SelectorToken[] {
