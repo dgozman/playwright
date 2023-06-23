@@ -16,7 +16,7 @@
 
 import type * as actions from '../recorder/recorderActions';
 import type { InjectedScript } from '../injected/injectedScript';
-import { generateSelector } from '../injected/selectorGenerator';
+import { generateSelector } from '../injected/selectorGenerator2';
 import type { Point } from '../../common/types';
 import type { UIState } from '@recorder/recorderTypes';
 import { Highlight } from '../injected/highlight';

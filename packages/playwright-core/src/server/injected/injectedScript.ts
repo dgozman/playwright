@@ -26,7 +26,7 @@ import { type TextMatcher, elementMatchesText, elementText, type ElementText, ge
 import { SelectorEvaluatorImpl, sortInDOMOrder } from './selectorEvaluator';
 import { enclosingShadowRootOrDocument, isElementVisible, parentElementOrShadowHost } from './domUtils';
 import type { CSSComplexSelectorList } from '../../utils/isomorphic/cssParser';
-import { generateSelector, type GenerateSelectorOptions } from './selectorGenerator';
+import { generateSelector, type GenerateSelectorOptions } from './selectorGenerator2';
 import type * as channels from '@protocol/channels';
 import { Highlight } from './highlight';
 import { getChecked, getAriaDisabled, getAriaRole, getElementAccessibleName } from './roleUtils';
@@ -1333,7 +1333,7 @@ export class InjectedScript {
   }
 
   getElementAccessibleName(element: Element, includeHidden?: boolean): string {
-    return getElementAccessibleName(element, !!includeHidden);
+    return getElementAccessibleName(element, !!includeHidden).accessibleName;
   }
 
   getAriaRole(element: Element) {

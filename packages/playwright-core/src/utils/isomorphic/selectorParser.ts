@@ -127,7 +127,11 @@ export function stringifySelector(selector: string | ParsedSelector): string {
   if (typeof selector === 'string')
     return selector;
   return selector.parts.map((p, i) => {
-    const prefix = p.name === 'css' ? '' : p.name + '=';
+    let prefix = p.name + '=';
+    if (p.name === 'css')
+      prefix = '';
+    if (p.name === 'xpath' && typeof p.body === 'string' &&  p.body.startsWith('..'))
+      prefix = '';
     return `${i === selector.capture ? '*' : ''}${prefix}${p.source}`;
   }).join(' >> ');
 }

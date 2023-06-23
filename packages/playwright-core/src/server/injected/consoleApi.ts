@@ -87,6 +87,7 @@ class ConsoleAPI {
       selector: (element: Element) => this._selector(element),
       generateLocator: (element: Element, language?: Language) => this._generateLocator(element, language),
       resume: () => this._resume(),
+      injectedScript,
       ...new Locator(injectedScript, ''),
     };
     delete this._injectedScript.window.playwright.filter;

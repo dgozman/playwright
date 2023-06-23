@@ -41,9 +41,10 @@ export function enclosingShadowRootOrDocument(element: Element): Document | Shad
 }
 
 function enclosingShadowHost(element: Element): Element | undefined {
-  while (element.parentElement)
-    element = element.parentElement;
-  return parentElementOrShadowHost(element);
+  const root = element.getRootNode();
+  if (root.nodeType === 9 /* Node.DOCUMENT_NODE */)
+    return;
+  return (root as ShadowRoot).host;
 }
 
 // Assumption: if scope is provided, element must be inside scope's subtree.
