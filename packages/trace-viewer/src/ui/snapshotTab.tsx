@@ -32,13 +32,14 @@ import { BrowserFrame } from './browserFrame';
 
 export const SnapshotTab: React.FunctionComponent<{
   action: ActionTraceEvent | undefined,
+  selectedTime: number | undefined,
   sdkLanguage: Language,
   testIdAttributeName: string,
   isInspecting: boolean,
   setIsInspecting: (isInspecting: boolean) => void,
   highlightedLocator: string,
   setHighlightedLocator: (locator: string) => void,
-}> = ({ action, sdkLanguage, testIdAttributeName, isInspecting, setIsInspecting, highlightedLocator, setHighlightedLocator }) => {
+}> = ({ action, selectedTime, sdkLanguage, testIdAttributeName, isInspecting, setIsInspecting, highlightedLocator, setHighlightedLocator }) => {
   const [measure, ref] = useMeasure<HTMLDivElement>();
   const [snapshotTab, setSnapshotTab] = React.useState<'action'|'before'|'after'>('action');
 
@@ -67,7 +68,10 @@ export const SnapshotTab: React.FunctionComponent<{
     const params = new URLSearchParams();
     params.set('trace', context(snapshot.action).traceUrl);
     const hashParams = new URLSearchParams();
-    hashParams.set('name', snapshot.snapshotName);
+    if (selectedTime)
+      hashParams.set('time', String(selectedTime));
+    else
+      hashParams.set('name', snapshot.snapshotName);
     if (snapshot.showPoint)
       hashParams.set('showPoint', '1');
     const snapshotUrl = new URL(`snapshot/${snapshot.action.pageId}?${params.toString()}#${hashParams.toString()}`, window.location.href).toString();
@@ -80,58 +84,80 @@ export const SnapshotTab: React.FunctionComponent<{
       popoutParams.set('showPoint', '1');
     const popoutUrl = new URL(`snapshot.html?${popoutParams.toString()}`, window.location.href).toString();
     return { snapshots, snapshotInfoUrl, snapshotUrl, popoutUrl };
-  }, [snapshots, snapshotTab]);
+  }, [snapshots, snapshotTab, selectedTime]);
 
   const iframeRef0 = React.useRef<HTMLIFrameElement>(null);
-  const iframeRef1 = React.useRef<HTMLIFrameElement>(null);
+  // const iframeRef1 = React.useRef<HTMLIFrameElement>(null);
   const [snapshotInfo, setSnapshotInfo] = React.useState({ viewport: kDefaultViewport, url: '' });
-  const loadingRef = React.useRef({ iteration: 0, visibleIframe: 0 });
+
+  type LoadingRefData = { loading?: SnapshotRequest, visible: SnapshotRequest, requested?: SnapshotRequest, visibleIframe: number };
+  const loadingRef = React.useRef<LoadingRefData>({ visible: { snapshotUrl: 'about:blank' }, visibleIframe: 0 });
+
+  const loadCurrentRequest = React.useCallback(async () => {
+    const request = loadingRef.current.requested;
+    if (!request || loadingRef.current.loading)
+      return;
+
+    if (request.snapshotUrl === loadingRef.current.visible.snapshotUrl && request.snapshotInfoUrl === loadingRef.current.visible.snapshotInfoUrl)
+      return;
+
+    loadingRef.current.requested = undefined;
+    loadingRef.current.loading = request;
+    // const newVisibleIframe = 1 - loadingRef.current.visibleIframe;
+    const newVisibleIframe = loadingRef.current.visibleIframe;
+
+    const newSnapshotInfo = { url: '', viewport: kDefaultViewport };
+    if (request.snapshotInfoUrl) {
+      const response = await fetch(request.snapshotInfoUrl);
+      const info = await response.json();
+      if (!info.error) {
+        newSnapshotInfo.url = info.url;
+        newSnapshotInfo.viewport = info.viewport;
+      }
+    }
+
+    const iframe = [iframeRef0][newVisibleIframe].current;
+    if (iframe) {
+      // let loadedCallback = () => {};
+      // const loadedPromise = new Promise<void>(f => loadedCallback = f);
+      try {
+        // iframe.addEventListener('load', loadedCallback);
+        // iframe.addEventListener('error', loadedCallback);
+
+        // Try preventing history entry from being created.
+        if (iframe.contentWindow)
+          iframe.contentWindow.location.replace(request.snapshotUrl);
+        else
+          iframe.src = request.snapshotUrl;
+
+        // loadedCallback();  // !!! Remove this logic.
+        // await Promise.race([
+        //   loadedPromise,
+        //   new Promise(f => setTimeout(f, 200)),
+        // ]);
+      } catch {
+      } finally {
+      //   iframe.removeEventListener('load', loadedCallback);
+      //   iframe.removeEventListener('error', loadedCallback);
+      }
+    }
+
+    loadingRef.current.loading = undefined;
+    loadingRef.current.visible = request;
+    loadingRef.current.visibleIframe = newVisibleIframe;
+    setSnapshotInfo(newSnapshotInfo);
+
+    // Perhaps there was a new request? Schedule the load.
+    setTimeout(loadCurrentRequest, 0);
+  }, [loadingRef, iframeRef0]);
 
   React.useEffect(() => {
-    (async () => {
-      const thisIteration = loadingRef.current.iteration + 1;
-      const newVisibleIframe = 1 - loadingRef.current.visibleIframe;
-      loadingRef.current.iteration = thisIteration;
-
-      const newSnapshotInfo = { url: '', viewport: kDefaultViewport };
-      if (snapshotInfoUrl) {
-        const response = await fetch(snapshotInfoUrl);
-        const info = await response.json();
-        if (!info.error) {
-          newSnapshotInfo.url = info.url;
-          newSnapshotInfo.viewport = info.viewport;
-        }
-      }
-
-      // Interrupted by another load - bail out.
-      if (loadingRef.current.iteration !== thisIteration)
-        return;
-
-      const iframe = [iframeRef0, iframeRef1][newVisibleIframe].current;
-      if (iframe) {
-        let loadedCallback = () => {};
-        try {
-          iframe.addEventListener('load', loadedCallback);
-          iframe.addEventListener('error', loadedCallback);
-
-          // Try preventing history entry from being created.
-          if (iframe.contentWindow)
-            iframe.contentWindow.location.replace(snapshotUrl);
-          else
-            iframe.src = snapshotUrl;
-        } catch {
-        } finally {
-          iframe.removeEventListener('load', loadedCallback);
-          iframe.removeEventListener('error', loadedCallback);
-        }
-      }
-      // Interrupted by another load - bail out.
-      if (loadingRef.current.iteration !== thisIteration)
-        return;
-
-      loadingRef.current.visibleIframe = newVisibleIframe;
-      setSnapshotInfo(newSnapshotInfo);
-    })();
+    const request: SnapshotRequest = {
+      snapshotUrl,
+      snapshotInfoUrl,
+    };
+    loadingRef.current.requested = request;
+    loadCurrentRequest();
   }, [snapshotUrl, snapshotInfoUrl]);
 
   const windowHeaderHeight = 40;
@@ -155,14 +181,14 @@ export const SnapshotTab: React.FunctionComponent<{
       }
     }}
   >
-    <InspectModeController
+    {/* <InspectModeController
       isInspecting={isInspecting}
       sdkLanguage={sdkLanguage}
       testIdAttributeName={testIdAttributeName}
       highlightedLocator={highlightedLocator}
       setHighlightedLocator={setHighlightedLocator}
       iframe={iframeRef0.current}
-      iteration={loadingRef.current.iteration} />
+      visible={loadingRef.current.visible} />
     <InspectModeController
       isInspecting={isInspecting}
       sdkLanguage={sdkLanguage}
@@ -170,7 +196,7 @@ export const SnapshotTab: React.FunctionComponent<{
       highlightedLocator={highlightedLocator}
       setHighlightedLocator={setHighlightedLocator}
       iframe={iframeRef1.current}
-      iteration={loadingRef.current.iteration} />
+      visible={loadingRef.current.visible} /> */}
     <Toolbar>
       {['action', 'before', 'after'].map(tab => {
         return <TabbedPaneTab
@@ -198,7 +224,7 @@ export const SnapshotTab: React.FunctionComponent<{
         <BrowserFrame url={snapshotInfo.url} />
         <div className='snapshot-switcher'>
           <iframe ref={iframeRef0} name='snapshot' className={loadingRef.current.visibleIframe === 0 ? 'snapshot-visible' : ''}></iframe>
-          <iframe ref={iframeRef1} name='snapshot' className={loadingRef.current.visibleIframe === 1 ? 'snapshot-visible' : ''}></iframe>
+          {/* <iframe ref={iframeRef1} name='snapshot' className={loadingRef.current.visibleIframe === 1 ? 'snapshot-visible' : ''}></iframe> */}
         </div>
       </div>
     </div>
@@ -222,8 +248,8 @@ export const InspectModeController: React.FunctionComponent<{
   testIdAttributeName: string,
   highlightedLocator: string,
   setHighlightedLocator: (locator: string) => void,
-  iteration: number,
-}> = ({ iframe, isInspecting, sdkLanguage, testIdAttributeName, highlightedLocator, setHighlightedLocator, iteration }) => {
+  visible: SnapshotRequest,
+}> = ({ iframe, isInspecting, sdkLanguage, testIdAttributeName, highlightedLocator, setHighlightedLocator, visible }) => {
   React.useEffect(() => {
     const recorders: { recorder: Recorder, frameSelector: string }[] = [];
     const isUnderTest = new URLSearchParams(window.location.search).get('isUnderTest') === 'true';
@@ -252,7 +278,7 @@ export const InspectModeController: React.FunctionComponent<{
         }
       });
     }
-  }, [iframe, isInspecting, highlightedLocator, setHighlightedLocator, sdkLanguage, testIdAttributeName, iteration]);
+  }, [iframe, isInspecting, highlightedLocator, setHighlightedLocator, sdkLanguage, testIdAttributeName]);
   return <></>;
 };
 
@@ -277,3 +303,4 @@ function createRecorders(recorders: { recorder: Recorder, frameSelector: string 
 
 const kDefaultViewport = { width: 1280, height: 720 };
 const kBlankSnapshotUrl = 'data:text/html,<body style="background: #ddd"></body>';
+type SnapshotRequest = { snapshotUrl: string, snapshotInfoUrl?: string };

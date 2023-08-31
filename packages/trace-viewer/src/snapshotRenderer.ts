@@ -16,8 +16,14 @@
 
 import type { FrameSnapshot, NodeSnapshot } from '@trace/snapshot';
 
+const escaped = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' };
+function escapeText(s: string): string {
+  return s.replace(/[&<]/ug, char => (escaped as any)[char]);
+}
+
 export function generateSnapshotRendererHTML(snapshots: FrameSnapshot[]) {
-  return `<html><head></head><body><script>window.SNAPSHOTS=${JSON.stringify(snapshots)}; ${incrementalScript()}</script></body></html>`;
+  const script = `window.SNAPSHOTS=${escapeText(JSON.stringify(snapshots))}; ${incrementalScript()}`;
+  return `<!DOCTYPE html><html><head></head><body><script>${script}</script></body></html>`;
 }
 
 function incrementalScript() {
@@ -98,6 +104,7 @@ function incrementalScript() {
     let scrollLefts = new Map<Element, number>();
     let targetElements = new Map<Element, { outline: string, backgroundColor: string }>();
     let targetIds: (string | undefined)[] = [];
+    let stats = { insertBeforeNonNull: 0, insertBefore: 0 };
 
     function reconcileAttributes(e: Element, snapshotAttrs: Record<string, string>) {
       const attrs: Record<string, string> = {};
@@ -126,7 +133,7 @@ function incrementalScript() {
         }
         if ((e.nodeName === 'FRAME' || e.nodeName === 'IFRAME') && (attrName === '__playwright_src__' || attrName === 'src')) {
           if (!attrValue) {
-            e.setAttribute('src', 'data:text/html,<body style="background: #ddd"></body>');
+            attrs['src'] = 'data:text/html,<body style="background: #ddd"></body>';
             continue;
           }
           // Retain query parameters to inherit name=, time=, showPoint= and other values from parent.
@@ -136,11 +143,17 @@ function incrementalScript() {
           if (index !== -1)
             url.pathname = url.pathname.substring(0, index + 1);
           url.pathname += attrValue.substring(1);
-          e.setAttribute('src', url.toString());
+          attrs['src'] = url.toString();
           continue;
         }
         if (e.nodeName === 'A' && attrName.toLowerCase() === 'href') {
           attrs[attrName] = 'link://' + attrValue;
+          continue;
+        }
+        if (['src', 'srcset'].includes(attrName.toLowerCase()) && (isImgWithCurrentSrc || isSourceInsidePictureWithCurrentSrc)) {
+          // Disable actual <img src>, <img srcset>, <source src> and <source srcset> if
+          // we will be using the currentSrc instead.
+          attrs['_' + attrName] = attrValue;
           continue;
         }
         if (e.nodeName === 'IMG' && attrName === '__playwright_current_src__') {
@@ -149,14 +162,8 @@ function incrementalScript() {
           attrs['src'] = rewriteURLForCustomProtocol(attrValue);
           continue;
         }
-        if (attrName.toLowerCase() === 'href' || attrName.toLowerCase() === 'src' || attrName === '__playwright_current_src__') {
+        if (attrName.toLowerCase() === 'href' || attrName.toLowerCase() === 'src') {
           attrs[attrName] = rewriteURLForCustomProtocol(attrValue);
-          continue;
-        }
-        if (['src', 'srcset'].includes(attrName.toLowerCase()) && (isImgWithCurrentSrc || isSourceInsidePictureWithCurrentSrc)) {
-          // Disable actual <img src>, <img srcset>, <source src> and <source srcset> if
-          // we will be using the currentSrc instead.
-          attrs['_' + attrName] = attrValue;
           continue;
         }
         if (attrName === '__playwright_target__') {
@@ -179,15 +186,17 @@ function incrementalScript() {
         }
         attrs[attrName] = attrValue;
       }
-      for (const [attrName, attrValue] of Object.entries(attrs))
-        e.setAttribute(attrName, attrValue);
-      const toRemove: string[] = [];
-      for (const attr of e.attributes) {
-        if (!(attr.name in attrs))
-          toRemove.push(attr.name);
+      for (const [attrName, attrValue] of Object.entries(attrs)) {
+        if (e.getAttribute(attrName) !== attrValue)
+          e.setAttribute(attrName, attrValue);
       }
-      for (const attrName of toRemove)
-        e.removeAttribute(attrName);
+      // const toRemove: string[] = [];
+      // for (const attr of e.attributes) {
+      //   if (!(attr.name in attrs))
+      //     toRemove.push(attr.name);
+      // }
+      // for (const attrName of toRemove)
+      //   e.removeAttribute(attrName);
     }
 
     function isRef(s: NodeSnapshot): s is [Ref] {
@@ -226,9 +235,9 @@ function incrementalScript() {
         (n as any)[idSymbol] = nodeId[0] + ':' + nodeId[1];
         // Best-effort Electron support: rewrite custom protocol in url() links in stylesheets.
         if (n.parentNode?.nodeName === 'STYLE')
-          n.textContent = rewriteURLsInStyleSheetForCustomProtocol(s);
+          n.nodeValue = rewriteURLsInStyleSheetForCustomProtocol(s);
         else
-          n.textContent = s;
+          n.nodeValue = s;
         nodeId[1]++;
         return;
       }
@@ -329,7 +338,13 @@ function incrementalScript() {
         }
 
         nToS.set(matchedChild, sChildren[i]);
-        n.insertBefore(matchedChild, lastNChild ? lastNChild.nextSibling : n.firstChild);
+        const next = lastNChild ? lastNChild.nextSibling : n.firstChild;
+        if (matchedChild.parentNode !== n || (matchedChild.nextSibling !== next && matchedChild !== next)) {
+          stats.insertBefore++;
+          if (next)
+            stats.insertBeforeNonNull++;
+          n.insertBefore(matchedChild, next);
+        }
         reconcile(matchedChild, sChildren[i], nodeId);
         lastNChild = matchedChild;
       }
@@ -338,8 +353,22 @@ function incrementalScript() {
         n.lastChild.remove();
     }
 
-    function getSnapshot(snapshotName: string): { html: NodeSnapshot, nodeId: NodeId, targetIds: (string | undefined)[] } {
-      const snapshotIndex = snapshots.findIndex(s => s.snapshotName === snapshotName);
+    type SnapshotData = { html: NodeSnapshot, nodeId: NodeId, targetIds: (string | undefined)[] };
+    function getSnapshot(snapshotTime: string, snapshotName: string): SnapshotData {
+      const time = snapshotTime ? +snapshotTime : 0;
+
+      let snapshotIndex = -1;
+      for (let index = 0; index < snapshots.length; index++) {
+        const snapshot = snapshots[index];
+        if (time) {
+          if (snapshot.timestamp <= time && (snapshotIndex === -1 || snapshots[snapshotIndex].timestamp < snapshot.timestamp))
+            snapshotIndex = index;
+        } else {
+          if (snapshots[index].snapshotName === snapshotName)
+            snapshotIndex = index;
+        }
+      }
+
       if (snapshotIndex === -1)
         return { html: ['html'], nodeId: [snapshotIndex, 0], targetIds: [] };
       const snapshot = snapshots[snapshotIndex];
@@ -399,28 +428,32 @@ function incrementalScript() {
 
     function onHashChange() {
       const hashParams = new URLSearchParams(getURL().hash.substring(1));
-      renderSnapshot(hashParams.get('name') || '');
+      const snapshot = getSnapshot(hashParams.get('time') || '', hashParams.get('name') || '');
+      renderSnapshot(snapshot);
     }
 
     function onLoad() {
+      // !!!! We need a different signal for this, because onLoad is not called for the second time.
       window.removeEventListener('load', onLoad);
       restoreScrollPositions();
     }
 
-    function renderSnapshot(snapshotName: string) {
-      window.removeEventListener('load', onLoad);
+    function renderSnapshot(snapshot: SnapshotData) {
+      const start = performance.now();
+      // window.removeEventListener('load', onLoad);
       // window.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
       // window.removeEventListener('hashchange', onHashChange);
 
-      const snapshot = getSnapshot(snapshotName);
       targetIds = snapshot.targetIds;
       scrollLefts = new Map();
       scrollTops = new Map();
       targetElements = new Map();
 
-      window.addEventListener('load', onLoad);
+      // window.addEventListener('load', onLoad);
+      stats = { insertBeforeNonNull: 0, insertBefore: 0 };
       reconcile(document.documentElement, snapshot.html, snapshot.nodeId);
       restoreScrollPositions();
+      console.log(stats);
 
       // window.addEventListener('DOMContentLoaded', onDOMContentLoaded);
       // window.addEventListener('hashchange', onHashChange);
@@ -431,6 +464,7 @@ function incrementalScript() {
       // window.addEventListener('hashchange', onHashChange);
       // document.write(snapshot.html);
       // document.close();
+      console.log('rendered in', performance.now() - start);
     }
 
     window.addEventListener('hashchange', onHashChange);

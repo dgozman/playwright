@@ -185,7 +185,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     if (this._state.options.screenshots)
       this._startScreencast();
     if (this._state.options.snapshots)
-      await this._snapshotter?.start();
+      await this._snapshotter?.start(true);
     return { traceName: this._state.traceName };
   }
 

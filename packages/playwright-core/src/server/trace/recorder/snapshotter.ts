@@ -44,6 +44,8 @@ export class Snapshotter {
   private _snapshotStreamer: string;
   private _initialized = false;
   private _started = false;
+  private _streamingTimer: NodeJS.Timeout | undefined;
+  private _streamingCounter = 0;
 
   constructor(context: BrowserContext, delegate: SnapshotterDelegate) {
     this._context = context;
@@ -56,13 +58,17 @@ export class Snapshotter {
     return this._started;
   }
 
-  async start() {
+  async start(streaming?: boolean) {
     this._started = true;
     if (!this._initialized) {
       this._initialized = true;
       await this._initialize();
     }
     await this.reset();
+    if (streaming) {
+      this._streamingCounter = 0;
+      this._scheduleStreamingSnapshot();
+    }
   }
 
   async reset() {
@@ -72,6 +78,10 @@ export class Snapshotter {
 
   async stop() {
     this._started = false;
+    if (this._streamingTimer) {
+      clearTimeout(this._streamingTimer);
+      this._streamingTimer = undefined;
+    }
   }
 
   resetForReuse() {
@@ -104,9 +114,27 @@ export class Snapshotter {
     eventsHelper.removeEventListeners(this._eventListeners);
   }
 
+  private _scheduleStreamingSnapshot() {
+    if (!this._started || this._streamingTimer)
+      return;
+    this._streamingTimer = setTimeout(async () => {
+      this._streamingTimer = undefined;
+
+      // Insert one keyframe per 10 snapshots.
+      if (++this._streamingCounter === 10) {
+        // await this.reset();
+        this._streamingCounter = 0;
+      }
+
+      for (const page of this._context.pages())
+        await this.captureSnapshot(page, '', '');
+      this._scheduleStreamingSnapshot();
+    }, 20);
+  }
+
   async captureSnapshot(page: Page, callId: string, snapshotName: string, element?: ElementHandle): Promise<void> {
     // Prepare expression synchronously.
-    const expression = `window["${this._snapshotStreamer}"].captureSnapshot(${JSON.stringify(snapshotName)})`;
+    const expression = `window["${this._snapshotStreamer}"].captureSnapshot()`;
 
     // In a best-effort manner, without waiting for it, mark target element.
     element?.callFunctionNoReply((element: Element, callId: string) => {

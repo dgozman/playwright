@@ -37,8 +37,7 @@ export class SnapshotServer {
   }
 
   serveSnapshotInfo(pathname: string, hashParams: URLSearchParams): Response {
-    const pageOrFrameId = pathname.substring('/snapshot/'.length);
-    const snapshot = this._snapshotStorage.snapshotByName(pageOrFrameId, hashParams.get('name') || '');
+    const snapshot = this._snapshot(pathname, hashParams);
     return this._respondWithJson(snapshot ? {
       viewport: snapshot.viewport,
       url: snapshot.frameUrl
@@ -57,9 +56,17 @@ export class SnapshotServer {
     });
   }
 
-  async serveResource(pathname: string, hashParams: URLSearchParams, requestUrlAlternatives: string[], method: string): Promise<Response> {
+  private _snapshot(pathname: string, hashParams: URLSearchParams) {
     const pageOrFrameId = pathname.substring('/snapshot/'.length);
-    const snapshot = this._snapshotStorage.snapshotByName(pageOrFrameId, hashParams.get('name') || '');
+    const time = hashParams.get('time');
+    if (time)
+      return this._snapshotStorage.snapshotByTime(pageOrFrameId, +time);
+    const name = hashParams.get('name') || '';
+    return this._snapshotStorage.snapshotByName(pageOrFrameId, name);
+  }
+
+  async serveResource(pathname: string, hashParams: URLSearchParams, requestUrlAlternatives: string[], method: string): Promise<Response> {
+    const snapshot = this._snapshot(pathname, hashParams);
     if (!snapshot)
       return new Response(null, { status: 404 });
 

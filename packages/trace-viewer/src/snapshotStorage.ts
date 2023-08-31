@@ -102,6 +102,16 @@ export class SnapshotStorage {
     return result;
   }
 
+  snapshotByTime(pageOrFrameId: string, snapshotTime: number): FrameSnapshot | undefined {
+    let result: FrameSnapshot | undefined;
+    for (const snapshot of this._frameSnapshots.get(pageOrFrameId) || []) {
+      const timestamp = snapshot.timestamp;
+      if (timestamp <= snapshotTime && (!result || result.timestamp < timestamp))
+        result = snapshot;
+    }
+    return result;
+  }
+
   snapshotsForTest() {
     return [...this._frameSnapshots.keys()];
   }

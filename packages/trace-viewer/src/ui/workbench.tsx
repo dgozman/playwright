@@ -200,6 +200,7 @@ export const Workbench: React.FunctionComponent<{
       <SplitView sidebarSize={250} orientation='horizontal' sidebarIsFirst={true} settingName='actionListSidebar'>
         <SnapshotTab
           action={activeAction}
+          selectedTime={selectedTime?.maximum}
           sdkLanguage={sdkLanguage}
           testIdAttributeName={model?.testIdAttributeName || 'data-testid'}
           isInspecting={isInspecting}
