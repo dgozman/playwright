@@ -14,297 +14,355 @@
  * limitations under the License.
  */
 
-import type { FrameSnapshot, NodeSnapshot, RenderedFrameSnapshot, ResourceSnapshot } from '@trace/snapshot';
+import type { FrameSnapshot, NodeSnapshot } from '@trace/snapshot';
 
-export class SnapshotRenderer {
-  private _snapshots: FrameSnapshot[];
-  private _index: number;
-  readonly snapshotName: string | undefined;
-  private _resources: ResourceSnapshot[];
-  private _snapshot: FrameSnapshot;
-  private _callId: string;
+export function generateSnapshotRendererHTML(snapshots: FrameSnapshot[]) {
+  return `<html><head></head><body><script>window.SNAPSHOTS=${JSON.stringify(snapshots)}; ${incrementalScript()}</script></body></html>`;
+}
 
-  constructor(resources: ResourceSnapshot[], snapshots: FrameSnapshot[], index: number) {
-    this._resources = resources;
-    this._snapshots = snapshots;
-    this._index = index;
-    this._snapshot = snapshots[index];
-    this._callId = snapshots[index].callId;
-    this.snapshotName = snapshots[index].snapshotName;
-  }
+function incrementalScript() {
+  function loadSnapshots() {
+    type Ref = [number, number];
+    type NodeId = [number, number];
 
-  snapshot(): FrameSnapshot {
-    return this._snapshots[this._index];
-  }
+    const snapshots: FrameSnapshot[] = (window as any).SNAPSHOTS;
+    const idSymbol = Symbol('nodeId');
 
-  viewport(): { width: number, height: number } {
-    return this._snapshots[this._index].viewport;
-  }
+    /**
+     * Best-effort Electron support: rewrite custom protocol in DOM.
+     * vscode-file://vscode-app/ -> https://pw-vscode-file--vscode-app/
+     */
+    const schemas = ['about:', 'blob:', 'data:', 'file:', 'ftp:', 'http:', 'https:', 'mailto:', 'sftp:', 'ws:', 'wss:'];
+    const kLegacyBlobPrefix = 'http://playwright.bloburl/#';
 
-  render(): RenderedFrameSnapshot {
-    const visit = (n: NodeSnapshot, snapshotIndex: number, parentTag: string | undefined, parentAttrs: [string, string][] | undefined): string => {
-      // Text node.
-      if (typeof n === 'string') {
-        const text = escapeText(n);
-        // Best-effort Electron support: rewrite custom protocol in url() links in stylesheets.
-        // Old snapshotter was sending lower-case.
-        if (parentTag === 'STYLE' || parentTag === 'style')
-          return rewriteURLsInStyleSheetForCustomProtocol(text);
-        return text;
-      }
+    function rewriteURLForCustomProtocol(href: string): string {
+      // Legacy support, we used to prepend this to blobs, strip it away.
+      if (href.startsWith(kLegacyBlobPrefix))
+        href = href.substring(kLegacyBlobPrefix.length);
 
-      if (!(n as any)._string) {
-        if (Array.isArray(n[0])) {
-          // Node reference.
-          const referenceIndex = snapshotIndex - n[0][0];
-          if (referenceIndex >= 0 && referenceIndex <= snapshotIndex) {
-            const nodes = snapshotNodes(this._snapshots[referenceIndex]);
-            const nodeIndex = n[0][1];
-            if (nodeIndex >= 0 && nodeIndex < nodes.length)
-              (n as any)._string = visit(nodes[nodeIndex], referenceIndex, parentTag, parentAttrs);
-          }
-        } else if (typeof n[0] === 'string') {
-          // Element node.
-          const builder: string[] = [];
-          builder.push('<', n[0]);
-          const attrs = Object.entries(n[1] || {});
-          const kCurrentSrcAttribute = '__playwright_current_src__';
-          const isFrame = n[0] === 'IFRAME' || n[0] === 'FRAME';
-          const isAnchor = n[0] === 'A';
-          const isImg = n[0] === 'IMG';
-          const isImgWithCurrentSrc = isImg && attrs.some(a => a[0] === kCurrentSrcAttribute);
-          const isSourceInsidePictureWithCurrentSrc = n[0] === 'SOURCE' && parentTag === 'PICTURE' && parentAttrs?.some(a => a[0] === kCurrentSrcAttribute);
-          for (const [attr, value] of attrs) {
-            let attrName = attr;
-            if (isFrame && attr.toLowerCase() === 'src') {
-              // Never set relative URLs as <iframe src> - they start fetching frames immediately.
-              attrName = '__playwright_src__';
-            }
-            if (isImg && attr === kCurrentSrcAttribute) {
-              // Render currentSrc for images, so that trace viewer does not accidentally
-              // resolve srcset to a different source.
-              attrName = 'src';
-            }
-            if (['src', 'srcset'].includes(attr.toLowerCase()) && (isImgWithCurrentSrc || isSourceInsidePictureWithCurrentSrc)) {
-              // Disable actual <img src>, <img srcset>, <source src> and <source srcset> if
-              // we will be using the currentSrc instead.
-              attrName = '_' + attrName;
-            }
-            let attrValue = value;
-            if (isAnchor && attr.toLowerCase() === 'href')
-              attrValue = 'link://' + value;
-            else if (attr.toLowerCase() === 'href' || attr.toLowerCase() === 'src' || attr === kCurrentSrcAttribute)
-              attrValue = rewriteURLForCustomProtocol(value);
-            builder.push(' ', attrName, '="', escapeAttribute(attrValue), '"');
-          }
-          builder.push('>');
-          for (let i = 2; i < n.length; i++)
-            builder.push(visit(n[i], snapshotIndex, n[0], attrs));
-          if (!autoClosing.has(n[0]))
-            builder.push('</', n[0], '>');
-          (n as any)._string = builder.join('');
-        } else {
-          // Why are we here? Let's not throw, just in case.
-          (n as any)._string = '';
-        }
-      }
-      return (n as any)._string;
-    };
+      try {
+        const url = new URL(href);
+        // Sanitize URL.
+        if (url.protocol === 'javascript:' || url.protocol === 'vbscript:')
+          return 'javascript:void(0)';
 
-    const snapshot = this._snapshot;
-    let html = visit(snapshot.html, this._index, undefined, undefined);
-    if (!html)
-      return { html: '', pageId: snapshot.pageId, frameId: snapshot.frameId, index: this._index };
+        // Pass through if possible.
+        const isBlob = url.protocol === 'blob:';
+        if (!isBlob && schemas.includes(url.protocol))
+          return href;
 
-    // Hide the document in order to prevent flickering. We will unhide once script has processed shadow.
-    const prefix = snapshot.doctype ? `<!DOCTYPE ${snapshot.doctype}>` : '';
-    html = prefix + [
-      '<style>*,*::before,*::after { visibility: hidden }</style>',
-      `<script>${snapshotScript(this._callId, this.snapshotName)}</script>`
-    ].join('') + html;
-
-    return { html, pageId: snapshot.pageId, frameId: snapshot.frameId, index: this._index };
-  }
-
-  resourceByUrl(url: string, method: string): ResourceSnapshot | undefined {
-    const snapshot = this._snapshot;
-    let sameFrameResource: ResourceSnapshot | undefined;
-    let otherFrameResource: ResourceSnapshot | undefined;
-
-    for (const resource of this._resources) {
-      // Only use resources that received response before the snapshot.
-      // Note that both snapshot time and request time are taken in the same Node process.
-      if (typeof resource._monotonicTime === 'number' && resource._monotonicTime >= snapshot.timestamp)
-        break;
-      if (resource.response.status === 304) {
-        // "Not Modified" responses are issued when browser requests the same resource
-        // multiple times, meanwhile indicating that it has the response cached.
-        //
-        // When rendering the snapshot, browser most likely will not have the resource cached,
-        // so we should respond with the real content instead, picking the last response that
-        // is not 304.
-        continue;
-      }
-      if (resource.request.url === url && resource.request.method === method) {
-        // Pick the last resource with matching url - most likely it was used
-        // at the time of snapshot, not the earlier aborted resource with the same url.
-        if (resource._frameref === snapshot.frameId)
-          sameFrameResource = resource;
-        else
-          otherFrameResource = resource;
+        // Rewrite blob and custom schemas.
+        const prefix = 'pw-' + url.protocol.slice(0, url.protocol.length - 1);
+        url.protocol = 'https:';
+        url.hostname = url.hostname ? `${prefix}--${url.hostname}` : prefix;
+        return url.toString();
+      } catch {
+        return href;
       }
     }
 
-    // First try locating exact resource belonging to this frame,
-    // then fall back to resource with this URL to account for memory cache.
-    let result = sameFrameResource ?? otherFrameResource;
-    if (result && method.toUpperCase() === 'GET') {
-      // Patch override if necessary.
-      for (const o of snapshot.resourceOverrides) {
-        if (url === o.url && o.sha1) {
-          result = {
-            ...result,
-            response: {
-              ...result.response,
-              content: {
-                ...result.response.content,
-                _sha1: o.sha1,
-              }
-            },
-          };
-          break;
-        }
-      }
+    /**
+     * Best-effort Electron support: rewrite custom protocol in inline stylesheets.
+     * vscode-file://vscode-app/ -> https://pw-vscode-file--vscode-app/
+     */
+    const urlInCSSRegex = /url\(['"]?([\w-]+:)\/\//ig;
+
+    function rewriteURLsInStyleSheetForCustomProtocol(text: string): string {
+      return text.replace(urlInCSSRegex, (match: string, protocol: string) => {
+        const isBlob = protocol === 'blob:';
+        if (!isBlob && schemas.includes(protocol))
+          return match;
+        return match.replace(protocol + '//', `https://pw-${protocol.slice(0, -1)}--`);
+      });
     }
 
-    return result;
-  }
-}
-
-const autoClosing = new Set(['AREA', 'BASE', 'BR', 'COL', 'COMMAND', 'EMBED', 'HR', 'IMG', 'INPUT', 'KEYGEN', 'LINK', 'MENUITEM', 'META', 'PARAM', 'SOURCE', 'TRACK', 'WBR']);
-const escaped = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' };
-
-function escapeAttribute(s: string): string {
-  return s.replace(/[&<>"']/ug, char => (escaped as any)[char]);
-}
-function escapeText(s: string): string {
-  return s.replace(/[&<]/ug, char => (escaped as any)[char]);
-}
-
-function snapshotNodes(snapshot: FrameSnapshot): NodeSnapshot[] {
-  if (!(snapshot as any)._nodes) {
-    const nodes: NodeSnapshot[] = [];
-    const visit = (n: NodeSnapshot) => {
-      if (typeof n === 'string') {
-        nodes.push(n);
-      } else if (typeof n[0] === 'string') {
-        for (let i = 2; i < n.length; i++)
-          visit(n[i]);
-        nodes.push(n);
+    function snapshotNodes(snapshot: FrameSnapshot): NodeSnapshot[] {
+      if (!(snapshot as any)._nodes) {
+        const nodes: NodeSnapshot[] = [];
+        const visit = (n: NodeSnapshot) => {
+          if (typeof n === 'string') {
+            nodes.push(n);
+          } else if (typeof n[0] === 'string') {
+            for (let i = 2; i < n.length; i++)
+              visit(n[i]);
+            nodes.push(n);
+          }
+        };
+        visit(snapshot.html);
+        (snapshot as any)._nodes = nodes;
       }
-    };
-    visit(snapshot.html);
-    (snapshot as any)._nodes = nodes;
-  }
-  return (snapshot as any)._nodes;
-}
+      return (snapshot as any)._nodes;
+    }
 
-function snapshotScript(...targetIds: (string | undefined)[]) {
-  function applyPlaywrightAttributes(unwrapPopoutUrl: (url: string) => string, ...targetIds: (string | undefined)[]) {
-    const scrollTops: Element[] = [];
-    const scrollLefts: Element[] = [];
-    const targetElements: Element[] = [];
+    let scrollTops = new Map<Element, number>();
+    let scrollLefts = new Map<Element, number>();
+    let targetElements = new Map<Element, { outline: string, backgroundColor: string }>();
+    let targetIds: (string | undefined)[] = [];
 
-    const visit = (root: Document | ShadowRoot) => {
-      // Collect all scrolled elements for later use.
-      for (const e of root.querySelectorAll(`[__playwright_scroll_top_]`))
-        scrollTops.push(e);
-      for (const e of root.querySelectorAll(`[__playwright_scroll_left_]`))
-        scrollLefts.push(e);
-
-      for (const element of root.querySelectorAll(`[__playwright_value_]`)) {
-        (element as HTMLInputElement | HTMLTextAreaElement).value = element.getAttribute('__playwright_value_')!;
-        element.removeAttribute('__playwright_value_');
-      }
-      for (const element of root.querySelectorAll(`[__playwright_checked_]`)) {
-        (element as HTMLInputElement).checked = element.getAttribute('__playwright_checked_') === 'true';
-        element.removeAttribute('__playwright_checked_');
-      }
-      for (const element of root.querySelectorAll(`[__playwright_selected_]`)) {
-        (element as HTMLOptionElement).selected = element.getAttribute('__playwright_selected_') === 'true';
-        element.removeAttribute('__playwright_selected_');
-      }
-
-      for (const targetId of targetIds) {
-        for (const target of root.querySelectorAll(`[__playwright_target__="${targetId}"]`)) {
-          const style = (target as HTMLElement).style;
-          style.outline = '2px solid #006ab1';
-          style.backgroundColor = '#6fa8dc7f';
-          targetElements.push(target);
+    function reconcileAttributes(e: Element, snapshotAttrs: Record<string, string>) {
+      const attrs: Record<string, string> = {};
+      const isImgWithCurrentSrc = e.nodeName === 'IMG' && snapshotAttrs['__playwright_current_src__'] !== undefined;
+      const isSourceInsidePictureWithCurrentSrc = e.nodeName === 'SOURCE' && e.parentElement?.nodeName === 'PICTURE' && e.parentElement.hasAttribute('__playwright_current_src__');
+      for (const [attrName, attrValue] of Object.entries(snapshotAttrs)) {
+        if (attrName === '__playwright_scroll_top_') {
+          scrollTops.set(e, +attrValue);
+          continue;
         }
-      }
-
-      for (const iframe of root.querySelectorAll('iframe, frame')) {
-        const src = iframe.getAttribute('__playwright_src__');
-        if (!src) {
-          iframe.setAttribute('src', 'data:text/html,<body style="background: #ddd"></body>');
-        } else {
+        if (attrName === '__playwright_scroll_left_') {
+          scrollLefts.set(e, +attrValue);
+          continue;
+        }
+        if (attrName === '__playwright_value_') {
+          (e as HTMLInputElement | HTMLTextAreaElement).value = attrValue;
+          continue;
+        }
+        if (attrName === '__playwright_checked_') {
+          (e as HTMLInputElement).checked = attrValue === 'true';
+          continue;
+        }
+        if (attrName === '__playwright_selected_') {
+          (e as HTMLOptionElement).selected = attrValue === 'true';
+          continue;
+        }
+        if ((e.nodeName === 'FRAME' || e.nodeName === 'IFRAME') && (attrName === '__playwright_src__' || attrName === 'src')) {
+          if (!attrValue) {
+            e.setAttribute('src', 'data:text/html,<body style="background: #ddd"></body>');
+            continue;
+          }
           // Retain query parameters to inherit name=, time=, showPoint= and other values from parent.
           const url = new URL(unwrapPopoutUrl(window.location.href));
           // We can be loading iframe from within iframe, reset base to be absolute.
           const index = url.pathname.lastIndexOf('/snapshot/');
           if (index !== -1)
             url.pathname = url.pathname.substring(0, index + 1);
-          url.pathname += src.substring(1);
-          iframe.setAttribute('src', url.toString());
+          url.pathname += attrValue.substring(1);
+          e.setAttribute('src', url.toString());
+          continue;
+        }
+        if (e.nodeName === 'A' && attrName.toLowerCase() === 'href') {
+          attrs[attrName] = 'link://' + attrValue;
+          continue;
+        }
+        if (e.nodeName === 'IMG' && attrName === '__playwright_current_src__') {
+          // Render currentSrc for images, so that trace viewer does not accidentally
+          // resolve srcset to a different source.
+          attrs['src'] = rewriteURLForCustomProtocol(attrValue);
+          continue;
+        }
+        if (attrName.toLowerCase() === 'href' || attrName.toLowerCase() === 'src' || attrName === '__playwright_current_src__') {
+          attrs[attrName] = rewriteURLForCustomProtocol(attrValue);
+          continue;
+        }
+        if (['src', 'srcset'].includes(attrName.toLowerCase()) && (isImgWithCurrentSrc || isSourceInsidePictureWithCurrentSrc)) {
+          // Disable actual <img src>, <img srcset>, <source src> and <source srcset> if
+          // we will be using the currentSrc instead.
+          attrs['_' + attrName] = attrValue;
+          continue;
+        }
+        if (attrName === '__playwright_target__') {
+          // const isTarget = (targetIds || []).includes(attrValue);
+          // if (isTarget) {
+          //   const style = (e as HTMLElement).style;
+          //   if (!targetElements.has(e))
+          //     targetElements.set(e, { outline: style.outline, backgroundColor: style.backgroundColor });
+          //   style.outline = '2px solid #006ab1';
+          //   style.backgroundColor = '#6fa8dc7f';
+          // } else {
+          //   if (targetElements.has(e)) {
+          //     const style = (e as HTMLElement).style;
+          //     style.outline = targetElements.get(e)!.outline;
+          //     style.backgroundColor = targetElements.get(e)!.backgroundColor;
+          //     targetElements.delete(e);
+          //   }
+          // }
+          continue;
+        }
+        attrs[attrName] = attrValue;
+      }
+      for (const [attrName, attrValue] of Object.entries(attrs))
+        e.setAttribute(attrName, attrValue);
+      const toRemove: string[] = [];
+      for (const attr of e.attributes) {
+        if (!(attr.name in attrs))
+          toRemove.push(attr.name);
+      }
+      for (const attrName of toRemove)
+        e.removeAttribute(attrName);
+    }
+
+    function isRef(s: NodeSnapshot): s is [Ref] {
+      return typeof s !== 'string' && Array.isArray(s[0]);
+    }
+
+    function resolveRef(nodeId: NodeId, snapshotRef: Ref): NodeId {
+      return [nodeId[0] - snapshotRef[0], snapshotRef[1]];
+    }
+
+    function resolveNodeSnapshot(nodeId: NodeId, s: NodeSnapshot): { s: Exclude<NodeSnapshot, [Ref]>, nodeId: NodeId } {
+      if (!isRef(s))
+        return { s, nodeId };
+      const id = resolveRef(nodeId, s[0]);
+      const snapshot = snapshots[id[0]];
+      const nodes = snapshot ? snapshotNodes(snapshot) : [];
+      if (id[1] >= 0 && id[1] < nodes.length)
+        return { s: nodes[id[1]] as Exclude<NodeSnapshot, [Ref]>, nodeId: id };
+      return { s: '', nodeId: id };
+    }
+
+    // |nodeId| is the id for this node. Updated in-place.
+    function reconcile(n: Node, s: NodeSnapshot, nodeId: NodeId) {
+      // if ('adoptedStyleSheets' in (root as any)) {
+      //   const adoptedSheets: CSSStyleSheet[] = [...(root as any).adoptedStyleSheets];
+      //   for (const element of root.querySelectorAll(`template[__playwright_style_sheet_]`)) {
+      //     const template = element as HTMLTemplateElement;
+      //     const sheet = new CSSStyleSheet();
+      //     (sheet as any).replaceSync(template.getAttribute('__playwright_style_sheet_'));
+      //     adoptedSheets.push(sheet);
+      //   }
+      //   (root as any).adoptedStyleSheets = adoptedSheets;
+      // }
+
+      if (typeof s === 'string') {
+        (n as any)[idSymbol] = nodeId[0] + ':' + nodeId[1];
+        // Best-effort Electron support: rewrite custom protocol in url() links in stylesheets.
+        if (n.parentNode?.nodeName === 'STYLE')
+          n.textContent = rewriteURLsInStyleSheetForCustomProtocol(s);
+        else
+          n.textContent = s;
+        nodeId[1]++;
+        return;
+      }
+
+      if (isRef(s)) {
+        const id = resolveRef(nodeId, s[0]);
+        const idString = id[0] + ':' + id[1];
+        if ((n as any)[idSymbol] === idString)
+          return;
+
+        const resolved = resolveNodeSnapshot(nodeId, s);
+        reconcile(n, resolved.s, resolved.nodeId);
+        return;
+      }
+
+      (n as any)[idSymbol] = nodeId[0] + ':' + nodeId[1];
+      nodeId[1]++;
+
+      const isShadowRoot = n.nodeType === Node.DOCUMENT_FRAGMENT_NODE;
+      const nodeName = isShadowRoot ? 'TEMPLATE' : n.nodeName;
+      if (s[0].toUpperCase() !== nodeName)
+        console.error('Unexpected nodeName for a node', n, s[0]);
+
+      if (n.nodeType === Node.ELEMENT_NODE && s[1])
+        reconcileAttributes(n as Element, s[1]);
+
+      const sChildren = s.slice(2);
+      if (!isShadowRoot && sChildren[0]) {
+        // Is sChildren[0] a shadow root?
+        const first = resolveNodeSnapshot(nodeId, sChildren[0]);
+        if (Array.isArray(first.s) && first.s[0] === 'template' && first.s[1] && '__playwright_shadow_root_' in first.s[1]) {
+          if (!(n as Element).shadowRoot)
+            (n as Element).attachShadow({ mode: 'open' });
+          reconcile((n as Element).shadowRoot!, sChildren[0], nodeId);
+          sChildren.splice(0, 1);
+        } else {
+          // Note: we cannot remove shadow root, so leave an empty shadow root without slots
+          // to avoid any side-effects.
+          if ((n as Element).shadowRoot)
+            (n as Element).shadowRoot!.textContent = '';
         }
       }
 
-      {
-        const body = root.querySelector(`body[__playwright_custom_elements__]`);
-        if (body && window.customElements) {
-          const customElements = (body.getAttribute('__playwright_custom_elements__') || '').split(',');
-          for (const elementName of customElements)
-            window.customElements.define(elementName, class extends HTMLElement {});
+      const nChildren: Node[] = [...n.childNodes];
+      const nChildById = new Map<string, Node>();
+      for (const child of nChildren)
+        nChildById.set((child as any)[idSymbol], child);
+      const nToS = new Map<Node, NodeSnapshot>();
+      const sToNMatch: (Node | undefined)[] = [];
+
+      for (const sChild of sChildren) {
+        let matchedChild: Node | undefined;
+        if (typeof sChild === 'string') {
+          for (const nChild of nChildren) {
+            if (nChild.nodeType === Node.TEXT_NODE && !nToS.has(nChild) && nChild.nodeValue === sChild) {
+              matchedChild = nChild;
+              break;
+            }
+          }
+        } else if (isRef(sChild)) {
+          const resolvedId = resolveRef(nodeId, sChild[0]);
+          const resolvedIdString = resolvedId[0] + ':' + resolvedId[1];
+          for (const nChild of nChildren) {
+            if (!nToS.has(nChild) && (nChild as any)[idSymbol] === resolvedIdString) {
+              matchedChild = nChild;
+              break;
+            }
+          }
         }
+        sToNMatch.push(matchedChild);
+        if (matchedChild)
+          nToS.set(matchedChild, sChild);
       }
 
-      for (const element of root.querySelectorAll(`template[__playwright_shadow_root_]`)) {
-        const template = element as HTMLTemplateElement;
-        const shadowRoot = template.parentElement!.attachShadow({ mode: 'open' });
-        shadowRoot.appendChild(template.content);
-        template.remove();
-        visit(shadowRoot);
-      }
-
-      if ('adoptedStyleSheets' in (root as any)) {
-        const adoptedSheets: CSSStyleSheet[] = [...(root as any).adoptedStyleSheets];
-        for (const element of root.querySelectorAll(`template[__playwright_style_sheet_]`)) {
-          const template = element as HTMLTemplateElement;
-          const sheet = new CSSStyleSheet();
-          (sheet as any).replaceSync(template.getAttribute('__playwright_style_sheet_'));
-          adoptedSheets.push(sheet);
+      let lastNChild: Node | undefined;
+      for (let i = 0; i < sChildren.length; i++) {
+        let matchedChild = sToNMatch[i];
+        const resolved = resolveNodeSnapshot(nodeId, sChildren[i]);
+        if (typeof resolved.s === 'string') {
+          for (const nChild of nChildren) {
+            if (matchedChild)
+              break;
+            if (nChild.nodeType === Node.TEXT_NODE && !nToS.has(nChild))
+              matchedChild = nChild;
+          }
+          if (!matchedChild)
+            matchedChild = document.createTextNode(resolved.s);
+        } else {
+          const sNodeName = resolved.s[0].toUpperCase();
+          for (const nChild of nChildren) {
+            if (matchedChild)
+              break;
+            if (nChild.nodeName === sNodeName && !nToS.has(nChild))
+              matchedChild = nChild;
+          }
+          if (!matchedChild)
+            matchedChild = document.createElement(sNodeName);
         }
-        (root as any).adoptedStyleSheets = adoptedSheets;
-      }
-    };
 
-    const onLoad = () => {
-      window.removeEventListener('load', onLoad);
-      for (const element of scrollTops) {
-        element.scrollTop = +element.getAttribute('__playwright_scroll_top_')!;
-        element.removeAttribute('__playwright_scroll_top_');
-      }
-      for (const element of scrollLefts) {
-        element.scrollLeft = +element.getAttribute('__playwright_scroll_left_')!;
-        element.removeAttribute('__playwright_scroll_left_');
+        nToS.set(matchedChild, sChildren[i]);
+        n.insertBefore(matchedChild, lastNChild ? lastNChild.nextSibling : n.firstChild);
+        reconcile(matchedChild, sChildren[i], nodeId);
+        lastNChild = matchedChild;
       }
 
-      document.styleSheets[0].disabled = true;
+      while (n.lastChild && n.lastChild !== lastNChild)
+        n.lastChild.remove();
+    }
 
-      const search = new URL(window.location.href).searchParams;
-      if (search.get('showPoint')) {
-        for (const target of targetElements) {
+    function getSnapshot(snapshotName: string): { html: NodeSnapshot, nodeId: NodeId, targetIds: (string | undefined)[] } {
+      const snapshotIndex = snapshots.findIndex(s => s.snapshotName === snapshotName);
+      if (snapshotIndex === -1)
+        return { html: ['html'], nodeId: [snapshotIndex, 0], targetIds: [] };
+      const snapshot = snapshots[snapshotIndex];
+      // const prefix = snapshot.doctype ? `<!DOCTYPE ${snapshot.doctype}>` : '';
+      return { html: snapshot.html, nodeId: [snapshotIndex, 0], targetIds: [snapshot.callId, snapshot.snapshotName] };
+    }
+
+    // <base>/snapshot.html?r=<snapshotUrl> is used for "pop out snapshot" feature.
+    function unwrapPopoutUrl(url: string) {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/snapshot.html'))
+        return u.searchParams.get('r')!;
+      return url;
+    }
+
+    function getURL() {
+      return new URL(unwrapPopoutUrl(window.location.href));
+    }
+
+    function highlightTargetElements() {
+      const hashParams = new URLSearchParams(getURL().hash.substring(1));
+      if (hashParams.get('showPoint')) {
+        for (const target of targetElements.keys()) {
           const pointElement = document.createElement('x-pw-pointer');
           pointElement.style.position = 'fixed';
           pointElement.style.backgroundColor = '#f44336';
@@ -319,17 +377,67 @@ function snapshotScript(...targetIds: (string | undefined)[]) {
           document.documentElement.appendChild(pointElement);
         }
       }
-    };
+    }
 
-    const onDOMContentLoaded = () => visit(document);
+    function restoreScrollPositions() {
+      // !!!!! This does not undo manual scrolling done on the snapshot.
+      // Similar to highlighted targets?
+      for (const [element, scrollTop] of scrollTops)
+        element.scrollTop = scrollTop;
+      for (const [element, scrollLeft] of scrollLefts)
+        element.scrollLeft = scrollLeft;
+    }
 
-    window.addEventListener('load', onLoad);
-    window.addEventListener('DOMContentLoaded', onDOMContentLoaded);
+    function updateCustomElements() {
+      const body = document.querySelector(`body[__playwright_custom_elements__]`);
+      if (body && window.customElements) {
+        const customElements = (body.getAttribute('__playwright_custom_elements__') || '').split(',');
+        for (const elementName of customElements)
+          window.customElements.define(elementName, class extends HTMLElement {});
+      }
+    }
+
+    function onHashChange() {
+      const hashParams = new URLSearchParams(getURL().hash.substring(1));
+      renderSnapshot(hashParams.get('name') || '');
+    }
+
+    function onLoad() {
+      window.removeEventListener('load', onLoad);
+      restoreScrollPositions();
+    }
+
+    function renderSnapshot(snapshotName: string) {
+      window.removeEventListener('load', onLoad);
+      // window.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
+      // window.removeEventListener('hashchange', onHashChange);
+
+      const snapshot = getSnapshot(snapshotName);
+      targetIds = snapshot.targetIds;
+      scrollLefts = new Map();
+      scrollTops = new Map();
+      targetElements = new Map();
+
+      window.addEventListener('load', onLoad);
+      reconcile(document.documentElement, snapshot.html, snapshot.nodeId);
+      restoreScrollPositions();
+
+      // window.addEventListener('DOMContentLoaded', onDOMContentLoaded);
+      // window.addEventListener('hashchange', onHashChange);
+
+      // document.open();
+      // window.addEventListener('load', onLoad);
+      // window.addEventListener('DOMContentLoaded', onDOMContentLoaded);
+      // window.addEventListener('hashchange', onHashChange);
+      // document.write(snapshot.html);
+      // document.close();
+    }
+
+    window.addEventListener('hashchange', onHashChange);
+    onHashChange();
   }
-
-  return `\n(${applyPlaywrightAttributes.toString()})(${unwrapPopoutUrl.toString()}${targetIds.map(id => `, "${id}"`).join('')})`;
+  return `\n(${loadSnapshots.toString()})()`;
 }
-
 
 /**
  * Best-effort Electron support: rewrite custom protocol in DOM.
@@ -362,21 +470,6 @@ export function rewriteURLForCustomProtocol(href: string): string {
   } catch {
     return href;
   }
-}
-
-/**
- * Best-effort Electron support: rewrite custom protocol in inline stylesheets.
- * vscode-file://vscode-app/ -> https://pw-vscode-file--vscode-app/
- */
-const urlInCSSRegex = /url\(['"]?([\w-]+:)\/\//ig;
-
-function rewriteURLsInStyleSheetForCustomProtocol(text: string): string {
-  return text.replace(urlInCSSRegex, (match: string, protocol: string) => {
-    const isBlob = protocol === 'blob:';
-    if (!isBlob && schemas.includes(protocol))
-      return match;
-    return match.replace(protocol + '//', `https://pw-${protocol.slice(0, -1)}--`);
-  });
 }
 
 // <base>/snapshot.html?r=<snapshotUrl> is used for "pop out snapshot" feature.

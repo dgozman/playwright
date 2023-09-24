@@ -51,10 +51,3 @@ export type FrameSnapshot = {
   viewport: { width: number, height: number },
   isMainFrame: boolean,
 };
-
-export type RenderedFrameSnapshot = {
-  html: string;
-  pageId: string;
-  frameId: string;
-  index: number;
-};

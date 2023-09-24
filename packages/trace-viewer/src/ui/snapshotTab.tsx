@@ -66,16 +66,17 @@ export const SnapshotTab: React.FunctionComponent<{
 
     const params = new URLSearchParams();
     params.set('trace', context(snapshot.action).traceUrl);
-    params.set('name', snapshot.snapshotName);
+    const hashParams = new URLSearchParams();
+    hashParams.set('name', snapshot.snapshotName);
     if (snapshot.showPoint)
-      params.set('showPoint', '1');
-    const snapshotUrl = new URL(`snapshot/${snapshot.action.pageId}?${params.toString()}`, window.location.href).toString();
-    const snapshotInfoUrl = new URL(`snapshotInfo/${snapshot.action.pageId}?${params.toString()}`, window.location.href).toString();
+      hashParams.set('showPoint', '1');
+    const snapshotUrl = new URL(`snapshot/${snapshot.action.pageId}?${params.toString()}#${hashParams.toString()}`, window.location.href).toString();
+    const snapshotInfoUrl = new URL(`snapshotInfo/${snapshot.action.pageId}?${params.toString()}#${hashParams.toString()}`, window.location.href).toString();
 
     const popoutParams = new URLSearchParams();
     popoutParams.set('r', snapshotUrl);
     popoutParams.set('trace', context(snapshot.action).traceUrl);
-    if (snapshot.showPoint)
+    if (snapshot.showPoint)  // Should this be in hashParams???
       popoutParams.set('showPoint', '1');
     const popoutUrl = new URL(`snapshot.html?${popoutParams.toString()}`, window.location.href).toString();
     return { snapshots, snapshotInfoUrl, snapshotUrl, popoutUrl };
@@ -109,7 +110,6 @@ export const SnapshotTab: React.FunctionComponent<{
       const iframe = [iframeRef0, iframeRef1][newVisibleIframe].current;
       if (iframe) {
         let loadedCallback = () => {};
-        const loadedPromise = new Promise<void>(f => loadedCallback = f);
         try {
           iframe.addEventListener('load', loadedCallback);
           iframe.addEventListener('error', loadedCallback);
@@ -119,8 +119,6 @@ export const SnapshotTab: React.FunctionComponent<{
             iframe.contentWindow.location.replace(snapshotUrl);
           else
             iframe.src = snapshotUrl;
-
-          await loadedPromise;
         } catch {
         } finally {
           iframe.removeEventListener('load', loadedCallback);

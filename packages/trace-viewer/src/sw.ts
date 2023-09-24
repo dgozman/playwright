@@ -87,6 +87,7 @@ async function doFetch(event: FetchEvent): Promise<Response> {
     }
 
     const traceUrl = url.searchParams.get('trace');
+    const hashParams = new URLSearchParams(url.hash.substring(1));
 
     if (relativePath === '/contexts') {
       try {
@@ -109,14 +110,14 @@ async function doFetch(event: FetchEvent): Promise<Response> {
       const { snapshotServer } = loadedTraces.get(traceUrl!) || {};
       if (!snapshotServer)
         return new Response(null, { status: 404 });
-      return snapshotServer.serveSnapshotInfo(relativePath, url.searchParams);
+      return snapshotServer.serveSnapshotInfo(relativePath, hashParams);
     }
 
     if (relativePath.startsWith('/snapshot/')) {
       const { snapshotServer } = loadedTraces.get(traceUrl!) || {};
       if (!snapshotServer)
         return new Response(null, { status: 404 });
-      const response = snapshotServer.serveSnapshot(relativePath, url.searchParams, url.href);
+      const response = snapshotServer.serveSnapshot(relativePath, hashParams);
       if (isDeployedAsHttps)
         response.headers.set('Content-Security-Policy', 'upgrade-insecure-requests');
       return response;
@@ -138,8 +139,10 @@ async function doFetch(event: FetchEvent): Promise<Response> {
     return fetch(event.request);
   }
 
-  const snapshotUrl = unwrapPopoutUrl(client!.url);
-  const traceUrl = new URL(snapshotUrl).searchParams.get('trace')!;
+  const snapshotUrl = new URL(unwrapPopoutUrl(client!.url));
+  const snapshotRelativePath = snapshotUrl.pathname.substring(scopePath.length - 1);
+  const hashParams = new URLSearchParams(snapshotUrl.hash.substring(1));
+  const traceUrl = snapshotUrl.searchParams.get('trace')!;
   const { snapshotServer } = loadedTraces.get(traceUrl) || {};
   if (!snapshotServer)
     return new Response(null, { status: 404 });
@@ -147,7 +150,7 @@ async function doFetch(event: FetchEvent): Promise<Response> {
   const lookupUrls = [request.url];
   if (isDeployedAsHttps && request.url.startsWith('https://'))
     lookupUrls.push(request.url.replace(/^https/, 'http'));
-  return snapshotServer.serveResource(lookupUrls, request.method, snapshotUrl);
+  return snapshotServer.serveResource(snapshotRelativePath, hashParams, lookupUrls, request.method);
 }
 
 function downloadHeadersForAttachment(traceModel: TraceModel, sha1: string): Headers | undefined {

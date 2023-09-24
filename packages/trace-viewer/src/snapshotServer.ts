@@ -15,7 +15,7 @@
  */
 
 import type { URLSearchParams } from 'url';
-import type { SnapshotRenderer } from './snapshotRenderer';
+import { generateSnapshotRendererHTML } from './snapshotRenderer';
 import type { SnapshotStorage } from './snapshotStorage';
 import type { ResourceSnapshot } from '@trace/snapshot';
 
@@ -24,35 +24,27 @@ type Point = { x: number, y: number };
 export class SnapshotServer {
   private _snapshotStorage: SnapshotStorage;
   private _resourceLoader: (sha1: string) => Promise<Blob | undefined>;
-  private _snapshotIds = new Map<string, SnapshotRenderer>();
 
   constructor(snapshotStorage: SnapshotStorage, resourceLoader: (sha1: string) => Promise<Blob | undefined>) {
     this._snapshotStorage = snapshotStorage;
     this._resourceLoader = resourceLoader;
   }
 
-  serveSnapshot(pathname: string, searchParams: URLSearchParams, snapshotUrl: string): Response {
-    const snapshot = this._snapshot(pathname.substring('/snapshot'.length), searchParams);
-    if (!snapshot)
-      return new Response(null, { status: 404 });
-    const renderedSnapshot = snapshot.render();
-    this._snapshotIds.set(snapshotUrl, snapshot);
-    return new Response(renderedSnapshot.html, { status: 200, headers: { 'Content-Type': 'text/html' } });
+  serveSnapshot(pathname: string, hashParams: URLSearchParams): Response {
+    const pageOrFrameId = pathname.substring('/snapshot/'.length);
+    const snapshots = this._snapshotStorage.snapshotsForFrame(pageOrFrameId);
+    return new Response(generateSnapshotRendererHTML(snapshots), { status: 200, headers: { 'Content-Type': 'text/html' } });
   }
 
-  serveSnapshotInfo(pathname: string, searchParams: URLSearchParams): Response {
-    const snapshot = this._snapshot(pathname.substring('/snapshotInfo'.length), searchParams);
+  serveSnapshotInfo(pathname: string, hashParams: URLSearchParams): Response {
+    const pageOrFrameId = pathname.substring('/snapshot/'.length);
+    const snapshot = this._snapshotStorage.snapshotByName(pageOrFrameId, hashParams.get('name') || '');
     return this._respondWithJson(snapshot ? {
-      viewport: snapshot.viewport(),
-      url: snapshot.snapshot().frameUrl
+      viewport: snapshot.viewport,
+      url: snapshot.frameUrl
     } : {
       error: 'No snapshot found'
     });
-  }
-
-  private _snapshot(pathname: string, params: URLSearchParams) {
-    const name = params.get('name')!;
-    return this._snapshotStorage.snapshotByName(pathname.slice(1), name);
   }
 
   private _respondWithJson(object: any): Response {
@@ -65,11 +57,15 @@ export class SnapshotServer {
     });
   }
 
-  async serveResource(requestUrlAlternatives: string[], method: string, snapshotUrl: string): Promise<Response> {
+  async serveResource(pathname: string, hashParams: URLSearchParams, requestUrlAlternatives: string[], method: string): Promise<Response> {
+    const pageOrFrameId = pathname.substring('/snapshot/'.length);
+    const snapshot = this._snapshotStorage.snapshotByName(pageOrFrameId, hashParams.get('name') || '');
+    if (!snapshot)
+      return new Response(null, { status: 404 });
+
     let resource: ResourceSnapshot | undefined;
-    const snapshot = this._snapshotIds.get(snapshotUrl)!;
     for (const requestUrl of requestUrlAlternatives) {
-      resource = snapshot?.resourceByUrl(removeHash(requestUrl), method);
+      resource = this._snapshotStorage.resourceByUrl(snapshot, removeHash(requestUrl), method);
       if (resource)
         break;
     }
