@@ -16,7 +16,7 @@
 
 import { expectTypes, callLogText } from '../util';
 import { matcherHint } from './matcherHint';
-import type { MatcherResult } from './matcherHint';
+import type { ExpectQueryResult, MatcherResult } from './matcherHint';
 import { currentExpectTimeout } from '../common/globals';
 import type { ExpectMatcherContext } from './expect';
 import type { Locator } from 'playwright-core';
@@ -29,7 +29,7 @@ export async function toBeTruthy(
   expected: string,
   unexpected: string,
   arg: string,
-  query: (isNot: boolean, timeout: number) => Promise<{ matches: boolean, log?: string[], received?: any, timedOut?: boolean }>,
+  query: (isNot: boolean, timeout: number) => Promise<ExpectQueryResult>,
   options: { timeout?: number } = {},
 ): Promise<MatcherResult<any, any>> {
   expectTypes(receiver, [receiverType], matcherName);
@@ -40,10 +40,10 @@ export async function toBeTruthy(
   };
 
   const timeout = currentExpectTimeout(options);
-  const { matches, log, timedOut } = await query(!!this.isNot, timeout);
+  const { matches, log, timedOut, closeReason } = await query(!!this.isNot, timeout);
   const actual = matches ? expected : unexpected;
   const message = () => {
-    const header = matcherHint(this, receiver, matcherName, 'locator', arg, matcherOptions, timedOut ? timeout : undefined);
+    const header = matcherHint(this, receiver, matcherName, 'locator', arg, matcherOptions, timedOut ? timeout : undefined, closeReason);
     const logText = callLogText(log);
     return matches ? `${header}Expected: not ${expected}\nReceived: ${expected}${logText}` :
       `${header}Expected: ${expected}\nReceived: ${unexpected}${logText}`;

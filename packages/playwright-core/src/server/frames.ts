@@ -40,7 +40,7 @@ import { type ParsedSelector, isInvalidSelectorError } from '../utils/isomorphic
 import type { ScreenshotOptions } from './screenshotter';
 import { asLocator } from '../utils/isomorphic/locatorGenerators';
 import { FrameSelectors } from './frameSelectors';
-import { TimeoutError } from './errors';
+import { TimeoutError, isTargetClosedError } from './errors';
 import { prepareFilesForUpload } from './fileUploadUtils';
 
 type ContextData = {
@@ -1362,7 +1362,7 @@ export class Frame extends SdkObject {
     });
   }
 
-  async expect(metadata: CallMetadata, selector: string, options: FrameExpectParams): Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean }> {
+  async expect(metadata: CallMetadata, selector: string, options: FrameExpectParams): Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean, closeReason?: string }> {
     let timeout = this._page._timeoutSettings.timeout(options);
     const start = timeout > 0 ? monotonicTime() : 0;
     const lastIntermediateResult: { received?: any, isSet: boolean } = { isSet: false };
@@ -1378,7 +1378,7 @@ export class Frame extends SdkObject {
     return await this._expectInternal(metadata, selector, options, false, timeout, lastIntermediateResult);
   }
 
-  private async _expectInternal(metadata: CallMetadata, selector: string, options: FrameExpectParams, oneShot: boolean, timeout: number, lastIntermediateResult: { received?: any, isSet: boolean }): Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean }> {
+  private async _expectInternal(metadata: CallMetadata, selector: string, options: FrameExpectParams, oneShot: boolean, timeout: number, lastIntermediateResult: { received?: any, isSet: boolean }): Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean, closeReason?: string }> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       if (oneShot) {
@@ -1432,11 +1432,13 @@ export class Frame extends SdkObject {
       // A: We want user to receive a friendly message containing the last intermediate result.
       if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
         throw e;
-      const result: { matches: boolean, received?: any, log?: string[], timedOut?: boolean } = { matches: options.isNot, log: metadata.log };
+      const result: { matches: boolean, received?: any, log?: string[], timedOut?: boolean, closeReason?: string } = { matches: options.isNot, log: metadata.log };
       if (lastIntermediateResult.isSet)
         result.received = lastIntermediateResult.received;
       if (e instanceof TimeoutError)
         result.timedOut = true;
+      else if (isTargetClosedError(e))
+        result.closeReason = this.attribution.page?._closeReason || this.attribution.context?._closeReason || this.attribution.browser?._closeReason;
       return result;
     });
   }

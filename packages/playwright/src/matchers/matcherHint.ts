@@ -20,10 +20,15 @@ import type { Locator } from 'playwright-core';
 import type { StackFrame } from '@protocol/channels';
 import { stringifyStackFrames } from 'playwright-core/lib/utils';
 
-export function matcherHint(state: ExpectMatcherContext, locator: Locator | undefined, matcherName: string, expression: any, actual: any, matcherOptions: any, timeout?: number) {
-  let header = state.utils.matcherHint(matcherName, expression, actual, matcherOptions).replace(/ \/\/ deep equality/, '') + '\n\n';
+export type ExpectQueryResult = { matches: boolean, log?: string[], received?: any, timedOut?: boolean, closeReason?: string };
+
+export function matcherHint(state: ExpectMatcherContext, locator: Locator | undefined, matcherName: string, expression: any, actual: any, matcherOptions: any, timeout?: number, closeReason?: string) {
+  let header = state.utils.matcherHint(matcherName, expression, actual, matcherOptions).replace(/ \/\/ deep equality/, '');
   if (timeout)
     header = colors.red(`Timed out ${timeout}ms waiting for `) + header;
+  // else if (closeReason)
+  //   header = `While waiting for ${header}: ${colors.red(closeReason)}`;
+  header += '\n\n';
   if (locator)
     header += `Locator: ${locator}\n`;
   return header;

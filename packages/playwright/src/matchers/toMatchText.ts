@@ -24,7 +24,7 @@ import {
   printReceivedStringContainExpectedSubstring
 } from './expect';
 import { matcherHint } from './matcherHint';
-import type { MatcherResult } from './matcherHint';
+import type { ExpectQueryResult, MatcherResult } from './matcherHint';
 import { currentExpectTimeout } from '../common/globals';
 import type { Locator } from 'playwright-core';
 
@@ -33,7 +33,7 @@ export async function toMatchText(
   matcherName: string,
   receiver: Locator,
   receiverType: string,
-  query: (isNot: boolean, timeout: number) => Promise<{ matches: boolean, received?: string, log?: string[], timedOut?: boolean }>,
+  query: (isNot: boolean, timeout: number) => Promise<ExpectQueryResult>,
   expected: string | RegExp,
   options: { timeout?: number, matchSubstring?: boolean } = {},
 ): Promise<MatcherResult<string | RegExp, string>> {
@@ -61,20 +61,20 @@ export async function toMatchText(
 
   const timeout = currentExpectTimeout(options);
 
-  const { matches: pass, received, log, timedOut } = await query(!!this.isNot, timeout);
+  const { matches: pass, received, log, timedOut, closeReason } = await query(!!this.isNot, timeout);
   const stringSubstring = options.matchSubstring ? 'substring' : 'string';
   const receivedString = received || '';
   const message = pass
     ? () =>
       typeof expected === 'string'
-        ? matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
+        ? matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined, closeReason) +
         `Expected ${stringSubstring}: not ${this.utils.printExpected(expected)}\n` +
         `Received string: ${printReceivedStringContainExpectedSubstring(
             receivedString,
             receivedString.indexOf(expected),
             expected.length,
         )}` + callLogText(log)
-        : matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
+        : matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined, closeReason) +
         `Expected pattern: not ${this.utils.printExpected(expected)}\n` +
         `Received string: ${printReceivedStringContainExpectedResult(
             receivedString,
@@ -88,7 +88,7 @@ export async function toMatchText(
       const labelReceived = 'Received string';
 
       return (
-        matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
+        matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined, closeReason) +
         this.utils.printDiffOrStringify(
             expected,
             receivedString,

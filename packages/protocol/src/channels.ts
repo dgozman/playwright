@@ -2944,6 +2944,7 @@ export type FrameExpectResult = {
   matches: boolean,
   received?: SerializedValue,
   timedOut?: boolean,
+  closeReason?: string,
   log?: string[],
 };
 

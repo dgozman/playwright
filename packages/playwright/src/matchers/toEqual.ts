@@ -16,7 +16,7 @@
 
 import { expectTypes, callLogText } from '../util';
 import { matcherHint } from './matcherHint';
-import type { MatcherResult } from './matcherHint';
+import type { ExpectQueryResult, MatcherResult } from './matcherHint';
 import { currentExpectTimeout } from '../common/globals';
 import type { ExpectMatcherContext } from './expect';
 import type { Locator } from 'playwright-core';
@@ -33,7 +33,7 @@ export async function toEqual<T>(
   matcherName: string,
   receiver: Locator,
   receiverType: string,
-  query: (isNot: boolean, timeout: number) => Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean }>,
+  query: (isNot: boolean, timeout: number) => Promise<ExpectQueryResult>,
   expected: T,
   options: { timeout?: number, contains?: boolean } = {},
 ): Promise<MatcherResult<any, any>> {
@@ -47,15 +47,15 @@ export async function toEqual<T>(
 
   const timeout = currentExpectTimeout(options);
 
-  const { matches: pass, received, log, timedOut } = await query(!!this.isNot, timeout);
+  const { matches: pass, received, log, timedOut, closeReason } = await query(!!this.isNot, timeout);
 
   const message = pass
     ? () =>
-      matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
+      matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined, closeReason) +
       `Expected: not ${this.utils.printExpected(expected)}\n` +
       `Received: ${this.utils.printReceived(received)}` + callLogText(log)
     : () =>
-      matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
+      matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined, closeReason) +
       this.utils.printDiffOrStringify(
           expected,
           received,

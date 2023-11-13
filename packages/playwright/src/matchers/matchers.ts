@@ -25,9 +25,10 @@ import { captureRawStack, constructURLBasedOnBaseURL, isRegExp, isTextualMimeTyp
 import { currentTestInfo } from '../common/globals';
 import { TestInfoImpl, type TestStepInternal } from '../worker/testInfo';
 import type { ExpectMatcherContext } from './expect';
+import type { ExpectQueryResult } from './matcherHint';
 
 interface LocatorEx extends Locator {
-  _expect(expression: string, options: Omit<FrameExpectOptions, 'expectedValue'> & { expectedValue?: any }): Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean }>;
+  _expect(expression: string, options: Omit<FrameExpectOptions, 'expectedValue'> & { expectedValue?: any }): Promise<ExpectQueryResult>;
 }
 
 interface APIResponseEx extends APIResponse {

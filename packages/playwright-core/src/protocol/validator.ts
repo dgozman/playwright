@@ -1648,6 +1648,7 @@ scheme.FrameExpectResult = tObject({
   matches: tBoolean,
   received: tOptional(tType('SerializedValue')),
   timedOut: tOptional(tBoolean),
+  closeReason: tOptional(tString),
   log: tOptional(tArray(tString)),
 });
 scheme.WorkerInitializer = tObject({
