@@ -172,11 +172,14 @@ test('step should inherit return type from its callback ', async ({ runTSC }) =>
         const bad2: string = await test.step('my step', async () => {
           return 10;
         });
+        // @ts-expect-error
+        const bad3: string = test.step('my step', () => 42);
         const good: string = await test.step('my step', async () => {
           return 'foo';
         });
         await test.step('my step', async () => { });
         const good2: string = await test.step('my step', () => 'foo');
+        const good3: boolean = test.step('my step', () => false);
       });
     `
   });

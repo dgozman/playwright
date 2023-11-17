@@ -218,13 +218,13 @@ export class TestTypeImpl {
     suite._use.push({ fixtures, location });
   }
 
-  async _step<T>(title: string, body: () => Promise<T>, options: { box?: boolean } = {}): Promise<T> {
+  _step<T>(title: string, body: () => T, options: { box?: boolean } = {}): T {
     const testInfo = currentTestInfo();
     if (!testInfo)
       throw new Error(`test.step() can only be called from a test`);
-    return testInfo._runAsStep({ category: 'test.step', title, box: options.box }, async () => {
+    return testInfo._runAsStep({ category: 'test.step', title, box: options.box }, () => {
       // Make sure that internal "step" is not leaked to the user callback.
-      return await body();
+      return body();
     });
   }
 

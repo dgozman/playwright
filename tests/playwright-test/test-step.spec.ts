@@ -70,7 +70,7 @@ class Reporter {
 module.exports = Reporter;
 `;
 
-test('should report api step hierarchy', async ({ runInlineTest }) => {
+test.only('should report api step hierarchy', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'reporter.ts': stepHierarchyReporter,
     'playwright.config.ts': `
@@ -95,6 +95,7 @@ test('should report api step hierarchy', async ({ runInlineTest }) => {
 
   expect(result.exitCode).toBe(0);
   const objects = result.outputLines.map(line => JSON.parse(line));
+  console.log(result.outputLines);
   expect(objects).toEqual([
     {
       category: 'hook',
@@ -569,11 +570,18 @@ test('should not pass arguments and return value from step', async ({ runInlineT
           return 10;
         });
         console.log('v1 = ' + v1);
+
         const v2 = await test.step('my step', async (...args) => {
           expect(args.length).toBe(0);
           return new Promise(f => setTimeout(() => f(v1 + 10), 100));
         });
         console.log('v2 = ' + v2);
+
+        const v3 = test.step('my step', (...args) => {
+          expect(args.length).toBe(0);
+          return 42;
+        });
+        console.log('v3 = ' + v3);
       });
     `
   }, { reporter: '', workers: 1 });
@@ -1146,7 +1154,7 @@ test('should propagate nested soft errors', async ({ runInlineTest }) => {
             expect.soft(1).toBe(2);
           });
         });
-      
+
         await test.step('second outer', async () => {
           await test.step('second inner', async () => {
             expect(1).toBe(2);
@@ -1229,7 +1237,7 @@ test('should not propagate nested hard errors', async ({ runInlineTest }) => {
             }
           });
         });
-      
+
         await test.step('second outer', async () => {
           await test.step('second inner', async () => {
             expect(1).toBe(2);

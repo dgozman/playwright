@@ -3475,7 +3475,7 @@ export interface TestType<TestArgs extends KeyValue, WorkerArgs extends KeyValue
    * @param body Step body.
    * @param options
    */
-  step<T>(title: string, body: () => T | Promise<T>, options?: { box?: boolean }): Promise<T>;
+  step<T>(title: string, body: () => T, options?: { box?: boolean }): T;
   /**
    * `expect` function can be used to create test assertions. Read more about [test assertions](https://playwright.dev/docs/test-assertions).
    *

@@ -371,18 +371,24 @@ export class TestInfoImpl implements TestInfo {
     });
   }
 
-  async _runAsStep<T>(stepInfo: Omit<TestStepInternal, 'complete' | 'wallTime' | 'parentStepId' | 'stepId' | 'steps'> & { wallTime?: number }, cb: (step: TestStepInternal) => Promise<T>): Promise<T> {
+  _runAsStep<T>(stepInfo: Omit<TestStepInternal, 'complete' | 'wallTime' | 'parentStepId' | 'stepId' | 'steps'> & { wallTime?: number }, cb: (step: TestStepInternal) => T): T {
     const step = this._addStep({ wallTime: Date.now(), ...stepInfo });
-    return await zones.run('stepZone', step, async () => {
-      try {
-        const result = await cb(step);
-        step.complete({});
-        return result;
-      } catch (e) {
-        step.complete({ error: e instanceof SkipError ? undefined : e });
-        throw e;
-      }
-    });
+    const reportStepErrorAndThrow = (e: Error): T => {
+      step.complete({ error: e instanceof SkipError ? undefined : e });
+      throw e;
+    };
+    const reportStepSuccess = (result: T) => {
+      step.complete({});
+      return result;
+    };
+    try {
+      const result = zones.run('stepZone', step, () => cb(step));
+      if (result instanceof Promise)
+        return result.then(reportStepSuccess).catch(reportStepErrorAndThrow) as T;
+      return reportStepSuccess(result);
+    } catch (e) {
+      return reportStepErrorAndThrow(e);
+    }
   }
 
   _isFailure() {
