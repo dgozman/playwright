@@ -85,6 +85,7 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
     }));
     this.addObjectListener(Page.Events.FrameAttached, frame => this._onFrameAttached(frame));
     this.addObjectListener(Page.Events.FrameDetached, frame => this._onFrameDetached(frame));
+    this.addObjectListener(Page.Events.InterstitialAppeared, (uid: number) => this._dispatchEvent('interstitialAppeared', { uid }));
     this.addObjectListener(Page.Events.WebSocket, webSocket => this._dispatchEvent('webSocket', { webSocket: new WebSocketDispatcher(this, webSocket) }));
     this.addObjectListener(Page.Events.Worker, worker => this._dispatchEvent('worker', { worker: new WorkerDispatcher(this, worker) }));
     this.addObjectListener(Page.Events.Video, (artifact: Artifact) => this._dispatchEvent('video', { artifact: ArtifactDispatcher.from(parentScope, artifact) }));
@@ -134,6 +135,15 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
 
   async goForward(params: channels.PageGoForwardParams, metadata: CallMetadata): Promise<channels.PageGoForwardResult> {
     return { response: ResponseDispatcher.fromNullable(this.parentScope(), await this._page.goForward(metadata, params)) };
+  }
+
+  async registerInterstitial(params: channels.PageRegisterInterstitialParams, metadata: CallMetadata): Promise<channels.PageRegisterInterstitialResult> {
+    const uid = this._page.registerInterstitial(params.selector);
+    return { uid };
+  }
+
+  async resolveInterstitialNoReply(params: channels.PageResolveInterstitialNoReplyParams, metadata: CallMetadata): Promise<void> {
+    this._page.resolveInterstitial(params.uid);
   }
 
   async emulateMedia(params: channels.PageEmulateMediaParams, metadata: CallMetadata): Promise<void> {

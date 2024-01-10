@@ -449,7 +449,7 @@ export class InjectedScript {
     });
   }
 
-  pollRaf<T>(predicate: Predicate<T>): InjectedScriptPoll<T> {
+  private pollRaf<T>(predicate: Predicate<T>): InjectedScriptPoll<T> {
     return this.poll(predicate, next => requestAnimationFrame(next));
   }
 
@@ -581,18 +581,23 @@ export class InjectedScript {
     return element;
   }
 
-  waitForElementStatesAndPerformAction<T>(node: Node, states: ElementState[], force: boolean | undefined,
-    callback: (node: Node, progress: InjectedScriptProgress) => T | symbol): InjectedScriptPoll<T | 'error:notconnected'> {
+  waitForElementStatesAndPerformAction<T>(node: Node, states: ElementState[], force: boolean | undefined, timeout: number | undefined,
+    callback: (node: Node, progress: InjectedScriptProgress) => T | symbol): InjectedScriptPoll<T | 'error:notconnected' | 'error:notactionable'> {
     let lastRect: { x: number, y: number, width: number, height: number } | undefined;
     let counter = 0;
     let samePositionCounter = 0;
     let lastTime = 0;
+    const startTime = performance.now();
 
     return this.pollRaf(progress => {
       if (force) {
         progress.log(`    forcing action`);
         return callback(node, progress);
       }
+
+      const time = performance.now();
+      if (timeout && time - startTime >= timeout)
+        return 'error:notactionable';
 
       for (const state of states) {
         if (state !== 'stable') {
@@ -617,7 +622,6 @@ export class InjectedScript {
           return progress.continuePolling;
 
         // Drop frames that are shorter than 16ms - WebKit Win bug.
-        const time = performance.now();
         if (this._stableRafCount > 1 && time - lastTime < 15)
           return progress.continuePolling;
         lastTime = time;

@@ -3523,6 +3523,63 @@ export interface Page {
   }): Promise<void>;
 
   /**
+   * Registers a handler for an interstitial element that might block the following actions: blur, check, click,
+   * dblclick, hover, fill, focus, press, pressSequentially, selectOption, setChecked, setInputFiles, tap, type,
+   * uncheck. The handler should get rid of the interstitial so that an action may proceed.
+   *
+   * The handler will only be run before/during one of the actions listed above. When no actions from the list are
+   * executed, the handler will not be run at all, even if the interstitial element appears on the page.
+   *
+   * Note that execution time of the handler counts towards the timeout of the action that executed the handler.
+   *
+   * **Usage**
+   *
+   * An example that closes a cookie dialog when it appears:
+   *
+   * ```js
+   * // Setup the handler.
+   * await page.registerInterstitial(page.getByRole('button', { name: 'Accept all cookies' }), async () => {
+   *   await page.getByRole('button', { name: 'Reject all cookies' }).click();
+   * });
+   *
+   * // Write the test as usual.
+   * await page.goto('https://example.com');
+   * await page.getByRole('button', { name: 'Start here' }).click();
+   * ```
+   *
+   * An example that skips the "Confirm your security details" page when it is shown:
+   *
+   * ```js
+   * // Setup the handler.
+   * await page.registerInterstitial(page.getByText('Confirm your security details'), async () => {
+   *   await page.getByRole('button', 'Remind me later').click();
+   * });
+   *
+   * // Write the test as usual.
+   * await page.goto('https://example.com');
+   * await page.getByRole('button', { name: 'Start here' }).click();
+   * ```
+   *
+   * An example with a custom check performed on every action retry, because it uses always-visible `<body>` locator:
+   *
+   * ```js
+   * // Setup the handler.
+   * await page.registerInterstitial(page.locator('body'), async () => {
+   *   await page.evaluate(() => window.removeObstructionsForTestIfNeeded());
+   * });
+   *
+   * // Write the test as usual.
+   * await page.goto('https://example.com');
+   * await page.getByRole('button', { name: 'Start here' }).click();
+   * ```
+   *
+   * @param locator Locator that triggers the handler.
+   * @param handler Function that should be run once `locator` appears. This function should get rid of the interstitial element that
+   * blocks actions like click.
+   */
+  registerInterstitial(locator: Locator, handler: Function): Promise<void>;
+
+  /**
    * This method reloads the current page, in the same way as if the user had triggered a browser refresh. Returns the
    * main resource response. In case of multiple redirects, the navigation will resolve with the response of the last
    * redirect.

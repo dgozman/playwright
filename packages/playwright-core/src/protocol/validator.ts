@@ -983,6 +983,9 @@ scheme.PageFrameAttachedEvent = tObject({
 scheme.PageFrameDetachedEvent = tObject({
   frame: tChannel(['Frame']),
 });
+scheme.PageInterstitialAppearedEvent = tObject({
+  uid: tNumber,
+});
 scheme.PageRouteEvent = tObject({
   route: tChannel(['Route']),
 });
@@ -1038,6 +1041,16 @@ scheme.PageGoForwardParams = tObject({
 scheme.PageGoForwardResult = tObject({
   response: tOptional(tChannel(['Response'])),
 });
+scheme.PageRegisterInterstitialParams = tObject({
+  selector: tString,
+});
+scheme.PageRegisterInterstitialResult = tObject({
+  uid: tNumber,
+});
+scheme.PageResolveInterstitialNoReplyParams = tObject({
+  uid: tNumber,
+});
+scheme.PageResolveInterstitialNoReplyResult = tOptional(tObject({}));
 scheme.PageReloadParams = tObject({
   timeout: tOptional(tNumber),
   waitUntil: tOptional(tType('LifecycleEvent')),

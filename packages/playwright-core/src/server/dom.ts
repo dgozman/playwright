@@ -37,6 +37,9 @@ export type InputFilesItems = {
 
 type ActionName = 'click' | 'hover' | 'dblclick' | 'tap' | 'move and up' | 'move and down';
 
+// We retry actionability checks every 500ms to allow for some checkpoints in between.
+const kNotActionableTimeoutMs = 500;
+
 export class NonRecoverableDOMError extends Error {
 }
 
@@ -226,7 +229,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async _waitAndScrollIntoViewIfNeeded(progress: Progress, waitForVisible: boolean): Promise<void> {
     const timeouts = [0, 50, 100, 250];
     while (progress.isRunning()) {
-      assertDone(throwRetargetableDOMError(await this._waitForElementStates(progress, waitForVisible ? ['visible', 'stable'] : ['stable'], false /* force */)));
+      assertDone(throwRetargetableDOMError(await this._waitForElementStates(progress, waitForVisible ? ['visible', 'stable'] : ['stable'], false /* force */, false /* returnNotActionable */)));
       progress.throwIfAborted();  // Avoid action that has side-effects.
       const result = throwRetargetableDOMError(await this._scrollRectIntoViewIfNeeded());
       if (result === 'error:notvisible') {
@@ -309,7 +312,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _retryPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>,
-    options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, performInterstitialCheckpoint: boolean): Promise<'error:notconnected' | 'done'> {
     let retry = 0;
     // We progressively wait longer between retries, up to 500ms.
     const waitTime = [0, 20, 100, 100, 500];
@@ -335,12 +338,19 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
           if (result === 'error:notconnected')
             return result;
         }
+        // Only perform interstitial checkpoints upon a retry, to make happy-path actions faster.
+        if (performInterstitialCheckpoint)
+          await this._frame._page.performInterstitialCheckpoint(progress);
       } else {
         progress.log(`attempting ${actionName} action${options.trial ? ' (trial run)' : ''}`);
       }
       const forceScrollOptions = scrollOptions[retry % scrollOptions.length];
-      const result = await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options);
+      const result = await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options, performInterstitialCheckpoint);
       ++retry;
+      if (result === 'error:notactionable') {
+        progress.log('  element is not actionable');
+        continue;
+      }
       if (result === 'error:notvisible') {
         if (options.force)
           throw new NonRecoverableDOMError('Element is not visible');
@@ -362,7 +372,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return 'done';
   }
 
-  async _performPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>, forceScrollOptions: ScrollIntoViewOptions | undefined, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notvisible' | 'error:notconnected' | 'error:notinviewport' | { hitTargetDescription: string } | 'done'> {
+  async _performPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>, forceScrollOptions: ScrollIntoViewOptions | undefined, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, returnNotActionable: boolean): Promise<'error:notvisible' | 'error:notconnected' | 'error:notactionable' | 'error:notinviewport' | { hitTargetDescription: string } | 'done'> {
     const { force = false, position } = options;
 
     const doScrollIntoView = async () => {
@@ -386,7 +396,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
 
     if ((options as any).__testHookBeforeStable)
       await (options as any).__testHookBeforeStable();
-    const result = await this._waitForElementStates(progress, waitForEnabled ? ['visible', 'enabled', 'stable'] : ['visible', 'stable'], force);
+    const result = await this._waitForElementStates(progress, waitForEnabled ? ['visible', 'enabled', 'stable'] : ['visible', 'stable'], force, returnNotActionable);
     if (result !== 'done')
       return result;
     if ((options as any).__testHookAfterStable)
@@ -472,68 +482,68 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async hover(metadata: CallMetadata, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._hover(progress, options);
+      const result = await this._hover(progress, options, false /* performInterstitialCheckpoint */);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, point => this._page.mouse.move(point.x, point.y), options);
+  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, performInterstitialCheckpoint: boolean): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, point => this._page.mouse.move(point.x, point.y), options, performInterstitialCheckpoint);
   }
 
   async click(metadata: CallMetadata, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._click(progress, options);
+      const result = await this._click(progress, options, false /* performInterstitialCheckpoint */);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _click(progress: Progress, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'click', true /* waitForEnabled */, point => this._page.mouse.click(point.x, point.y, options), options);
+  _click(progress: Progress, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, performInterstitialCheckpoint: boolean): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'click', true /* waitForEnabled */, point => this._page.mouse.click(point.x, point.y, options), options, performInterstitialCheckpoint);
   }
 
   async dblclick(metadata: CallMetadata, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._dblclick(progress, options);
+      const result = await this._dblclick(progress, options, false /* performInterstitialCheckpoint */);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'dblclick', true /* waitForEnabled */, point => this._page.mouse.dblclick(point.x, point.y, options), options);
+  _dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, performInterstitialCheckpoint: boolean): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'dblclick', true /* waitForEnabled */, point => this._page.mouse.dblclick(point.x, point.y, options), options, performInterstitialCheckpoint);
   }
 
   async tap(metadata: CallMetadata, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._tap(progress, options);
+      const result = await this._tap(progress, options, false /* performInterstitialCheckpoint */);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _tap(progress: Progress, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'tap', true /* waitForEnabled */, point => this._page.touchscreen.tap(point.x, point.y), options);
+  _tap(progress: Progress, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, performInterstitialCheckpoint: boolean): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'tap', true /* waitForEnabled */, point => this._page.touchscreen.tap(point.x, point.y), options, performInterstitialCheckpoint);
   }
 
   async selectOption(metadata: CallMetadata, elements: ElementHandle[], values: types.SelectOption[], options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<string[]> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._selectOption(progress, elements, values, options);
+      const result = await this._selectOption(progress, elements, values, options, false /* returnNotActionable */);
       return throwRetargetableDOMError(result);
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _selectOption(progress: Progress, elements: ElementHandle[], values: types.SelectOption[], options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<string[] | 'error:notconnected'> {
+  async _selectOption(progress: Progress, elements: ElementHandle[], values: types.SelectOption[], options: types.NavigatingActionWaitOptions & types.ForceOptions, returnNotActionable: boolean): Promise<string[] | 'error:notconnected' | 'error:notactionable'> {
     const optionsToSelect = [...elements, ...values];
     await progress.beforeInputAction(this);
     return this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
       progress.throwIfAborted();  // Avoid action that has side-effects.
       progress.log('  selecting specified option(s)');
-      const result = await this.evaluatePoll(progress, ([injected, node, { optionsToSelect, force }]) => {
-        return injected.waitForElementStatesAndPerformAction(node, ['visible', 'enabled'], force, injected.selectOptions.bind(injected, optionsToSelect));
-      }, { optionsToSelect, force: options.force });
+      const result = await this.evaluatePoll(progress, ([injected, node, { optionsToSelect, force, timeout }]) => {
+        return injected.waitForElementStatesAndPerformAction(node, ['visible', 'enabled'], force, timeout, injected.selectOptions.bind(injected, optionsToSelect));
+      }, { optionsToSelect, force: options.force, timeout: returnNotActionable ? kNotActionableTimeoutMs : undefined });
       return result;
     });
   }
@@ -541,21 +551,21 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async fill(metadata: CallMetadata, value: string, options: types.NavigatingActionWaitOptions & types.ForceOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._fill(progress, value, options);
+      const result = await this._fill(progress, value, options, false /* returnNotActionable */);
       assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _fill(progress: Progress, value: string, options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<'error:notconnected' | 'done'> {
+  async _fill(progress: Progress, value: string, options: types.NavigatingActionWaitOptions & types.ForceOptions, returnNotActionable: boolean): Promise<'error:notconnected' | 'error:notactionable' | 'done'> {
     progress.log(`elementHandle.fill("${value}")`);
     await progress.beforeInputAction(this);
     return this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
       progress.log('  waiting for element to be visible, enabled and editable');
-      const filled = await this.evaluatePoll(progress, ([injected, node, { value, force }]) => {
-        return injected.waitForElementStatesAndPerformAction(node, ['visible', 'enabled', 'editable'], force, injected.fill.bind(injected, value));
-      }, { value, force: options.force });
+      const filled = await this.evaluatePoll(progress, ([injected, node, { value, force, timeout }]) => {
+        return injected.waitForElementStatesAndPerformAction(node, ['visible', 'enabled', 'editable'], force, timeout, injected.fill.bind(injected, value));
+      }, { value, force: options.force, timeout: returnNotActionable ? kNotActionableTimeoutMs : undefined });
       progress.throwIfAborted();  // Avoid action that has side-effects.
-      if (filled === 'error:notconnected')
+      if (filled === 'error:notconnected' || filled === 'error:notactionable')
         return filled;
       progress.log('  element is visible, enabled and editable');
       if (filled === 'needsinput') {
@@ -571,12 +581,12 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     }, 'input');
   }
 
-  async selectText(metadata: CallMetadata, options: types.TimeoutOptions & types.ForceOptions = {}): Promise<void> {
+  async selectText(metadata: CallMetadata, options: types.TimeoutOptions & types.ForceOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       progress.throwIfAborted();  // Avoid action that has side-effects.
       const result = await this.evaluatePoll(progress, ([injected, node, force]) => {
-        return injected.waitForElementStatesAndPerformAction(node, ['visible'], force, injected.selectText.bind(injected));
+        return injected.waitForElementStatesAndPerformAction(node, ['visible'], force, undefined, injected.selectText.bind(injected));
       }, options.force);
       assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
@@ -681,7 +691,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async check(metadata: CallMetadata, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._setChecked(progress, true, options);
+      const result = await this._setChecked(progress, true, options, false /* performInterstitialCheckpoint */);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
@@ -689,19 +699,19 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   async uncheck(metadata: CallMetadata, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._setChecked(progress, false, options);
+      const result = await this._setChecked(progress, false, options, false /* performInterstitialCheckpoint */);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _setChecked(progress: Progress, state: boolean, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+  async _setChecked(progress: Progress, state: boolean, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions, performInterstitialCheckpoint: boolean): Promise<'error:notconnected' | 'done'> {
     const isChecked = async () => {
       const result = await this.evaluateInUtility(([injected, node]) => injected.elementState(node, 'checked'), {});
       return throwRetargetableDOMError(result);
     };
     if (await isChecked() === state)
       return 'done';
-    const result = await this._click(progress, options);
+    const result = await this._click(progress, options, performInterstitialCheckpoint);
     if (result !== 'done')
       return result;
     if (options.trial)
@@ -767,7 +777,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return controller.run(async progress => {
       progress.log(`  waiting for element to be ${state}`);
       const result = await this.evaluatePoll(progress, ([injected, node, state]) => {
-        return injected.waitForElementStatesAndPerformAction(node, [state], false, () => 'done' as const);
+        return injected.waitForElementStatesAndPerformAction(node, [state], false, undefined, () => 'done' as const);
       }, state);
       assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
@@ -786,13 +796,13 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return this;
   }
 
-  async _waitForElementStates(progress: Progress, states: ElementState[], force: boolean): Promise<'error:notconnected' | 'done'> {
+  async _waitForElementStates(progress: Progress, states: ElementState[], force: boolean, returnNotActionable: boolean): Promise<'error:notconnected' | 'error:notactionable' | 'done'> {
     const title = joinWithAnd(states);
     progress.log(`  waiting for element to be ${title}`);
-    const result = await this.evaluatePoll(progress, ([injected, node, { states, force }]) => {
-      return injected.waitForElementStatesAndPerformAction(node, states, force, () => 'done' as const);
-    }, { states, force });
-    if (result === 'error:notconnected')
+    const result = await this.evaluatePoll(progress, ([injected, node, { states, force, timeout }]) => {
+      return injected.waitForElementStatesAndPerformAction(node, states, force, timeout, () => 'done' as const);
+    }, { states, force, timeout: returnNotActionable ? kNotActionableTimeoutMs : undefined });
+    if (result === 'error:notconnected' || result === 'error:notactionable')
       return result;
     progress.log(`  element is ${title}`);
     return result;
@@ -901,8 +911,8 @@ export class InjectedScriptPollHandler<T> {
   }
 }
 
-export function throwRetargetableDOMError<T>(result: T | 'error:notconnected'): T {
-  if (result === 'error:notconnected')
+export function throwRetargetableDOMError<T>(result: T | 'error:notconnected' | 'error:notactionable'): T {
+  if (result === 'error:notconnected' || result === 'error:notactionable')
     throw new Error('Element is not attached to the DOM');
   return result;
 }

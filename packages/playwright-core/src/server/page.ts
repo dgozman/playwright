@@ -131,6 +131,7 @@ export class Page extends SdkObject {
     FrameAttached: 'frameattached',
     FrameDetached: 'framedetached',
     InternalFrameNavigatedToNewDocument: 'internalframenavigatedtonewdocument',
+    InterstitialAppeared: 'interstitialappeared',
     ScreencastFrame: 'screencastframe',
     Video: 'video',
     WebSocket: 'websocket',
@@ -168,6 +169,8 @@ export class Page extends SdkObject {
   _video: Artifact | null = null;
   _opener: Page | undefined;
   private _isServerSideOnly = false;
+  private _interstitials = new Map<number, { selector: string, resolved?: ManualPromise<void> }>();
+  private _lastInterstitialUid = 0;
 
   // Aiming at 25 fps by default - each frame is 40ms, but we give some slack with 35ms.
   // When throttling for tracing, 200ms between frames, except for 10 frames around the action.
@@ -249,6 +252,7 @@ export class Page extends SdkObject {
   async resetForReuse(metadata: CallMetadata) {
     this.setDefaultNavigationTimeout(undefined);
     this.setDefaultTimeout(undefined);
+    this._interstitials.clear();
 
     await this._removeExposedBindings();
     await this._removeInitScripts();
@@ -439,6 +443,32 @@ export class Page extends SdkObject {
       this._emulatedMedia.forcedColors = options.forcedColors;
 
     await this._delegate.updateEmulateMedia();
+  }
+
+  registerInterstitial(selector: string) {
+    const uid = ++this._lastInterstitialUid;
+    this._interstitials.set(uid, { selector });
+    return uid;
+  }
+
+  resolveInterstitial(uid: number) {
+    const interstitial = this._interstitials.get(uid);
+    if (interstitial) {
+      interstitial.resolved?.resolve();
+      interstitial.resolved = undefined;
+    }
+  }
+
+  async performInterstitialCheckpoint(progress: Progress) {
+    for (const [uid, interstitial] of this._interstitials) {
+      if (!interstitial.resolved) {
+        if (await this.mainFrame().isVisibleInternal(progress, interstitial.selector, { strict: true })) {
+          interstitial.resolved = new ManualPromise();
+          this.emit(Page.Events.InterstitialAppeared, uid);
+        }
+      }
+      await interstitial.resolved;
+    }
   }
 
   emulatedMedia(): EmulatedMedia {

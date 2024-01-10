@@ -1761,6 +1761,7 @@ export interface PageEventTarget {
   on(event: 'fileChooser', callback: (params: PageFileChooserEvent) => void): this;
   on(event: 'frameAttached', callback: (params: PageFrameAttachedEvent) => void): this;
   on(event: 'frameDetached', callback: (params: PageFrameDetachedEvent) => void): this;
+  on(event: 'interstitialAppeared', callback: (params: PageInterstitialAppearedEvent) => void): this;
   on(event: 'route', callback: (params: PageRouteEvent) => void): this;
   on(event: 'video', callback: (params: PageVideoEvent) => void): this;
   on(event: 'webSocket', callback: (params: PageWebSocketEvent) => void): this;
@@ -1776,6 +1777,8 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   exposeBinding(params: PageExposeBindingParams, metadata?: CallMetadata): Promise<PageExposeBindingResult>;
   goBack(params: PageGoBackParams, metadata?: CallMetadata): Promise<PageGoBackResult>;
   goForward(params: PageGoForwardParams, metadata?: CallMetadata): Promise<PageGoForwardResult>;
+  registerInterstitial(params: PageRegisterInterstitialParams, metadata?: CallMetadata): Promise<PageRegisterInterstitialResult>;
+  resolveInterstitialNoReply(params: PageResolveInterstitialNoReplyParams, metadata?: CallMetadata): Promise<PageResolveInterstitialNoReplyResult>;
   reload(params: PageReloadParams, metadata?: CallMetadata): Promise<PageReloadResult>;
   expectScreenshot(params: PageExpectScreenshotParams, metadata?: CallMetadata): Promise<PageExpectScreenshotResult>;
   screenshot(params: PageScreenshotParams, metadata?: CallMetadata): Promise<PageScreenshotResult>;
@@ -1821,6 +1824,9 @@ export type PageFrameAttachedEvent = {
 };
 export type PageFrameDetachedEvent = {
   frame: FrameChannel,
+};
+export type PageInterstitialAppearedEvent = {
+  uid: number,
 };
 export type PageRouteEvent = {
   route: RouteChannel,
@@ -1907,6 +1913,22 @@ export type PageGoForwardOptions = {
 export type PageGoForwardResult = {
   response?: ResponseChannel,
 };
+export type PageRegisterInterstitialParams = {
+  selector: string,
+};
+export type PageRegisterInterstitialOptions = {
+
+};
+export type PageRegisterInterstitialResult = {
+  uid: number,
+};
+export type PageResolveInterstitialNoReplyParams = {
+  uid: number,
+};
+export type PageResolveInterstitialNoReplyOptions = {
+
+};
+export type PageResolveInterstitialNoReplyResult = void;
 export type PageReloadParams = {
   timeout?: number,
   waitUntil?: LifecycleEvent,
@@ -2258,6 +2280,7 @@ export interface PageEvents {
   'fileChooser': PageFileChooserEvent;
   'frameAttached': PageFrameAttachedEvent;
   'frameDetached': PageFrameDetachedEvent;
+  'interstitialAppeared': PageInterstitialAppearedEvent;
   'route': PageRouteEvent;
   'video': PageVideoEvent;
   'webSocket': PageWebSocketEvent;

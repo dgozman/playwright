@@ -97,6 +97,8 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   _closeWasCalled: boolean = false;
   private _harRouters: HarRouter[] = [];
 
+  private _interstitials = new Map<number, Function>();
+
   static from(page: channels.PageChannel): Page {
     return (page as any)._object;
   }
@@ -133,6 +135,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     this._channel.on('fileChooser', ({ element, isMultiple }) => this.emit(Events.Page.FileChooser, new FileChooser(this, ElementHandle.from(element), isMultiple)));
     this._channel.on('frameAttached', ({ frame }) => this._onFrameAttached(Frame.from(frame)));
     this._channel.on('frameDetached', ({ frame }) => this._onFrameDetached(Frame.from(frame)));
+    this._channel.on('interstitialAppeared', ({ uid }) => this._onInterstitialAppeared(uid));
     this._channel.on('route', ({ route }) => this._onRoute(Route.from(route)));
     this._channel.on('video', ({ artifact }) => {
       const artifactObject = Artifact.from(artifact);
@@ -358,6 +361,22 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   async reload(options: channels.PageReloadOptions = {}): Promise<Response | null> {
     const waitUntil = verifyLoadState('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
     return Response.fromNullable((await this._channel.reload({ ...options, waitUntil })).response);
+  }
+
+  async registerInterstitial(locator: Locator, handler: Function): Promise<void> {
+    if (locator._frame !== this._mainFrame)
+      throw new Error(`Interstitial locator must belong to the main frame of this page`);
+    const { uid } = await this._channel.registerInterstitial({ selector: locator._selector });
+    this._interstitials.set(uid, handler);
+  }
+
+  private async _onInterstitialAppeared(uid: number) {
+    try {
+      const handler = this._interstitials.get(uid);
+      await handler?.();
+    } catch {
+    }
+    this._channel.resolveInterstitialNoReply({ uid }).catch(() => {});
   }
 
   async waitForLoadState(state?: LifecycleEvent, options?: { timeout?: number }): Promise<void> {
