@@ -18,7 +18,14 @@ import type { Language } from '../../playwright-core/src/utils/isomorphic/locato
 
 export type Point = { x: number, y: number };
 
-export type Mode = 'inspecting' | 'recording' | 'none' | 'assertingText' | 'recording-inspecting' | 'standby' | 'assertingVisibility' | 'assertingValue';
+export type Mode = 'none'  // nothing is shown
+  | 'standby'              // overlay is shown, but not engaged
+  | 'inspecting'           // pick a locator
+  | 'recording'            // recording actions
+  | 'recording-inspecting' // pick a locator, go back to recording
+  | 'assertingText'        // recording a toContainText assertion
+  | 'assertingVisibility'  // recording a toBeVisible assertion
+  | 'assertingValue';      // recording a toHaveValue assertion
 
 export type EventData = {
   event: 'clear' | 'resume' | 'step' | 'pause' | 'setMode' | 'selectorUpdated' | 'fileChanged';

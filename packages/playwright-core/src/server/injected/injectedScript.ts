@@ -141,7 +141,7 @@ export class InjectedScript {
   }
 
   generateSelector(targetElement: Element, options?: GenerateSelectorOptions): string {
-    return generateSelector(this, targetElement, { ...options, testIdAttributeName: this._testIdAttributeNameForStrictErrorAndConsoleCodegen }).selector;
+    return generateSelector(this, targetElement, { ...options, testIdAttributeName: this._testIdAttributeNameForStrictErrorAndConsoleCodegen })[0];
   }
 
   querySelector(selector: ParsedSelector, root: Node, strict: boolean): Element | undefined {

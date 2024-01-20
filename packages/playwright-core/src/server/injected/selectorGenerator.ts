@@ -67,17 +67,18 @@ export type GenerateSelectorOptions = {
   omitInternalEngines?: boolean;
   root?: Element | Document;
   forTextExpect?: boolean;
+  multiple?: boolean;
 };
 
-export function generateSelector(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions): { selector: string, elements: Element[] } {
+// Always returns at least one selector.
+export function generateSelector(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions): string[] {
   injectedScript._evaluator.begin();
   beginAriaCaches();
   try {
-    let targetTokens: SelectorToken[];
     if (options.forTextExpect) {
-      targetTokens = cssFallback(injectedScript, targetElement.ownerDocument.documentElement, options);
+      let targetTokens = cssFallback(injectedScript, targetElement.ownerDocument.documentElement, options);
       for (let element: Element | undefined = targetElement; element; element = parentElementOrShadowHost(element)) {
-        const tokens = generateSelectorFor(injectedScript, element, options);
+        const tokens = generateSelectorFor(injectedScript, element, options, 'disallow');
         if (!tokens)
           continue;
         const score = combineScores(tokens);
@@ -86,16 +87,19 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
           break;
         }
       }
-    } else {
-      targetElement = closestCrossShadow(targetElement, 'button,select,input,[role=button],[role=checkbox],[role=radio],a,[role=link]', options.root) || targetElement;
-      targetTokens = generateSelectorFor(injectedScript, targetElement, options) || cssFallback(injectedScript, targetElement, options);
+      return unique([joinTokens(targetTokens)]);
     }
-    const selector = joinTokens(targetTokens);
-    const parsedSelector = injectedScript.parseSelector(selector);
-    return {
-      selector,
-      elements: injectedScript.querySelectorAll(parsedSelector, options.root ?? targetElement.ownerDocument)
-    };
+
+    targetElement = closestCrossShadow(targetElement, 'button,select,input,[role=button],[role=checkbox],[role=radio],a,[role=link]', options.root) || targetElement;
+    if (options.multiple) {
+      const withText = generateSelectorFor(injectedScript, targetElement, options, 'allow');
+      const withoutText = generateSelectorFor(injectedScript, targetElement, options, 'disallow');
+      const css = cssFallback(injectedScript, targetElement, options);
+      return unique([withText, withoutText, css].filter(Boolean).map(tokens => joinTokens(tokens!)));
+    } else {
+      const targetTokens = generateSelectorFor(injectedScript, targetElement, options, 'allow') || cssFallback(injectedScript, targetElement, options);
+      return unique([joinTokens(targetTokens)]);
+    }
   } finally {
     cacheAllowText.clear();
     cacheDisallowText.clear();
@@ -109,7 +113,11 @@ function filterRegexTokens(textCandidates: SelectorToken[][]): SelectorToken[][]
   return textCandidates.filter(c => c[0].selector[0] !== '/');
 }
 
-function generateSelectorFor(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions): SelectorToken[] | null {
+function unique(selectors: string[]) {
+  return [...new Set(selectors)];
+}
+
+function generateSelectorFor(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions, text: 'allow' | 'disallow'): SelectorToken[] | null {
   if (options.root && !isInsideScope(options.root, targetElement))
     throw new Error(`Target element must belong to the root's subtree`);
 
@@ -188,7 +196,7 @@ function generateSelectorFor(injectedScript: InjectedScript, targetElement: Elem
     return value;
   };
 
-  return calculate(targetElement, !options.forTextExpect);
+  return calculate(targetElement, text === 'allow');
 }
 
 function buildNoTextCandidates(injectedScript: InjectedScript, element: Element, options: GenerateSelectorOptions): SelectorToken[] {
