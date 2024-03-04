@@ -25,6 +25,7 @@ import type { RecentLogsCollector } from '../utils/debugLogger';
 import type { CallMetadata } from './instrumentation';
 import { SdkObject } from './instrumentation';
 import { Artifact } from './artifact';
+import type { InterceptorProxy } from './interceptorProxy';
 
 export interface BrowserProcess {
   onclose?: ((exitCode: number | null, signal: string | null) => void);
@@ -45,6 +46,7 @@ export type BrowserOptions = {
   browserProcess: BrowserProcess,
   customExecutablePath?: string;
   proxy?: ProxySettings,
+  interceptorProxy?: InterceptorProxy,
   protocolLogger: types.ProtocolLogger,
   browserLogsCollector: RecentLogsCollector,
   slowMo?: number;
@@ -72,6 +74,8 @@ export abstract class Browser extends SdkObject {
     this.attribution.browser = this;
     this.options = options;
     this.instrumentation.onBrowserOpen(this);
+    if (this.options.interceptorProxy)
+      this.options.interceptorProxy.browser = this;
   }
 
   abstract doCreateNewContext(options: channels.BrowserNewContextParams): Promise<BrowserContext>;
@@ -143,6 +147,7 @@ export abstract class Browser extends SdkObject {
   }
 
   _didClose() {
+    this.options.interceptorProxy?.stop().catch(() => {});
     for (const context of this.contexts())
       context._browserClosed();
     if (this._defaultContext)

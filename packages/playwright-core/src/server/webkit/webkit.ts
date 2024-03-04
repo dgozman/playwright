@@ -26,6 +26,7 @@ import type * as types from '../types';
 import { wrapInASCIIBox } from '../../utils';
 import type { SdkObject } from '../instrumentation';
 import type { ProtocolError } from '../protocolError';
+import type { InterceptorProxy } from '../interceptorProxy';
 
 export class WebKit extends BrowserType {
   constructor(parent: SdkObject) {
@@ -52,7 +53,7 @@ export class WebKit extends BrowserType {
     transport.send({ method: 'Playwright.close', params: {}, id: kBrowserCloseMessageId });
   }
 
-  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
+  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string, interceptorProxy: InterceptorProxy | undefined): string[] {
     const { args = [], proxy, headless } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
     if (userDataDirArg)

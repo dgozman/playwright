@@ -378,6 +378,8 @@ export abstract class BrowserContext extends SdkObject {
   }
 
   protected _authenticateProxyViaHeader() {
+    if (this._browser.options.interceptorProxy)
+      return;
     const proxy = this._options.proxy || this._browser.options.proxy || { username: undefined, password: undefined };
     const { username, password } = proxy;
     if (username) {
@@ -391,6 +393,8 @@ export abstract class BrowserContext extends SdkObject {
   }
 
   protected _authenticateProxyViaCredentials() {
+    if (this._browser.options.interceptorProxy)
+      return;
     const proxy = this._options.proxy || this._browser.options.proxy;
     if (!proxy)
       return;
@@ -412,6 +416,10 @@ export abstract class BrowserContext extends SdkObject {
   async setRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {
     this._requestInterceptor = handler;
     await this.doUpdateRequestInterception();
+    // for (const page of this.pages()) {
+    //   if (!page.needsRequestInterception())
+    //     this._browser.options.interceptorProxy?.continueInflightRequests(page);
+    // }
   }
 
   isClosingOrClosed() {

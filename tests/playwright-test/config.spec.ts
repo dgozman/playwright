@@ -640,7 +640,7 @@ test('should merge ct configs', async ({ runInlineTest }) => {
         use: { foo: 1, bar: 2 },
         grep: 'hi',
         '@playwright/test': expect.objectContaining({
-          babelPlugins: [[expect.stringContaining('tsxTransform.js')]]        
+          babelPlugins: [[expect.stringContaining('tsxTransform.js')]]
         }),
         '@playwright/experimental-ct-core': expect.objectContaining({
           registerSourceFile: expect.stringContaining('registerSource'),

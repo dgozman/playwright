@@ -102,16 +102,17 @@ export class CRBrowser extends Browser {
 
   async doCreateNewContext(options: channels.BrowserNewContextParams): Promise<BrowserContext> {
     let proxyBypassList = undefined;
-    if (options.proxy) {
+    const proxy = this.options.interceptorProxy ? undefined : options.proxy;
+    if (proxy) {
       if (process.env.PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK)
-        proxyBypassList = options.proxy.bypass;
+        proxyBypassList = proxy.bypass;
       else
-        proxyBypassList = '<-loopback>' + (options.proxy.bypass ? `,${options.proxy.bypass}` : '');
+        proxyBypassList = '<-loopback>' + (proxy.bypass ? `,${proxy.bypass}` : '');
     }
 
     const { browserContextId } = await this._session.send('Target.createBrowserContext', {
       disposeOnDetach: true,
-      proxyServer: options.proxy ? options.proxy.server : undefined,
+      proxyServer: proxy ? proxy.server : undefined,
       proxyBypassList,
     });
     const context = new CRBrowserContext(this, browserContextId, options);
@@ -359,7 +360,7 @@ export class CRBrowserContext extends BrowserContext {
     await Promise.all(promises);
   }
 
-  private _crPages() {
+  _crPages() {
     return [...this._browser._crPages.values()].filter(crPage => crPage._browserContext === this);
   }
 
@@ -459,7 +460,7 @@ export class CRBrowserContext extends BrowserContext {
     for (const page of this.pages())
       await (page._delegate as CRPage).updateExtraHTTPHeaders();
     for (const sw of this.serviceWorkers())
-      await (sw as CRServiceWorker).updateExtraHTTPHeaders(false);
+      await (sw as CRServiceWorker).updateExtraHTTPHeaders();
   }
 
   async setUserAgent(userAgent: string | undefined): Promise<void> {
@@ -474,7 +475,7 @@ export class CRBrowserContext extends BrowserContext {
     for (const page of this.pages())
       await (page._delegate as CRPage).updateOffline();
     for (const sw of this.serviceWorkers())
-      await (sw as CRServiceWorker).updateOffline(false);
+      await (sw as CRServiceWorker).updateOffline();
   }
 
   async doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
@@ -482,7 +483,7 @@ export class CRBrowserContext extends BrowserContext {
     for (const page of this.pages())
       await (page._delegate as CRPage).updateHttpCredentials();
     for (const sw of this.serviceWorkers())
-      await (sw as CRServiceWorker).updateHttpCredentials(false);
+      await (sw as CRServiceWorker).updateHttpCredentials();
   }
 
   async doAddInitScript(source: string) {

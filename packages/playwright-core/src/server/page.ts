@@ -359,6 +359,9 @@ export class Page extends SdkObject {
   }
 
   extraHTTPHeaders(): types.HeadersArray | undefined {
+    // const interceptorProxy = this._browserContext._browser.options.interceptorProxy;
+    // if (interceptorProxy && this.needsRequestInterception())
+    //   return network.mergeHeaders([this._extraHTTPHeaders, [{ name: interceptorProxy.attributionHeader(), value: this.guid }]]);
     return this._extraHTTPHeaders;
   }
 
@@ -526,13 +529,23 @@ export class Page extends SdkObject {
   }
 
   async setClientRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {
+    // const hadRequestInterception = this.needsRequestInterception();
     this._clientRequestInterceptor = handler;
     await this._delegate.updateRequestInterception();
+    // if (this._browserContext._browser.options.interceptorProxy && hadRequestInterception !== this.needsRequestInterception())
+    //   await this._delegate.updateExtraHTTPHeaders();
+    // if (!this.needsRequestInterception())
+    //   this._browserContext._browser.options.interceptorProxy?.continueInflightRequests(this);
   }
 
   async _setServerRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {
+    // const hadRequestInterception = this.needsRequestInterception();
     this._serverRequestInterceptor = handler;
     await this._delegate.updateRequestInterception();
+    // if (this._browserContext._browser.options.interceptorProxy && hadRequestInterception !== this.needsRequestInterception())
+    //   await this._delegate.updateExtraHTTPHeaders();
+    // if (!this.needsRequestInterception())
+    //   this._browserContext._browser.options.interceptorProxy?.continueInflightRequests(this);
   }
 
   async expectScreenshot(metadata: CallMetadata, options: ExpectScreenshotOptions = {}): Promise<{ actual?: Buffer, previous?: Buffer, diff?: Buffer, errorMessage?: string, log?: string[] }> {

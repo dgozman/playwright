@@ -49,6 +49,7 @@ import { ManualPromise } from '../../utils/manualPromise';
 import { validateBrowserContextOptions } from '../browserContext';
 import { chromiumSwitches } from './chromiumSwitches';
 import type { ProtocolError } from '../protocolError';
+import type { InterceptorProxy } from '../interceptorProxy';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -176,7 +177,7 @@ export class Chromium extends BrowserType {
     if (!hubUrl.endsWith('/'))
       hubUrl = hubUrl + '/';
 
-    const args = this._innerDefaultArgs(options);
+    const args = this._innerDefaultArgs(options, undefined);
     args.push('--remote-debugging-port=0');
     const isEdge = options.channel && options.channel.startsWith('msedge');
     let desiredCapabilities = {
@@ -277,8 +278,8 @@ export class Chromium extends BrowserType {
     }
   }
 
-  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
-    const chromeArguments = this._innerDefaultArgs(options);
+  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string, interceptorProxy: InterceptorProxy | undefined): string[] {
+    const chromeArguments = this._innerDefaultArgs(options, interceptorProxy);
     chromeArguments.push(`--user-data-dir=${userDataDir}`);
     if (options.useWebSocket)
       chromeArguments.push('--remote-debugging-port=0');
@@ -291,8 +292,8 @@ export class Chromium extends BrowserType {
     return chromeArguments;
   }
 
-  private _innerDefaultArgs(options: types.LaunchOptions): string[] {
-    const { args = [], proxy } = options;
+  private _innerDefaultArgs(options: types.LaunchOptions, interceptorProxy: InterceptorProxy | undefined): string[] {
+    const { args = [] } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
     if (userDataDirArg)
       throw this._createUserDataDirArgMisuseError('--user-data-dir');
@@ -326,6 +327,7 @@ export class Chromium extends BrowserType {
     }
     if (options.chromiumSandbox !== true)
       chromeArguments.push('--no-sandbox');
+    const proxy = interceptorProxy ? interceptorProxy.proxySettings() : options.proxy;
     if (proxy) {
       const proxyURL = new URL(proxy.server);
       const isSocks = proxyURL.protocol === 'socks5:';
@@ -346,6 +348,8 @@ export class Chromium extends BrowserType {
       if (proxyBypassRules.length > 0)
         chromeArguments.push(`--proxy-bypass-list=${proxyBypassRules.join(';')}`);
     }
+    if (interceptorProxy)
+      chromeArguments.push(`--ignore-certificate-errors-spki-list=${interceptorProxy.spki()}`);
     chromeArguments.push(...args);
     return chromeArguments;
   }

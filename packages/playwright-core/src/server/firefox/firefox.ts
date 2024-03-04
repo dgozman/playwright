@@ -27,6 +27,7 @@ import type * as types from '../types';
 import { wrapInASCIIBox } from '../../utils';
 import type { SdkObject } from '../instrumentation';
 import type { ProtocolError } from '../protocolError';
+import type { InterceptorProxy } from '../interceptorProxy';
 
 export class Firefox extends BrowserType {
   constructor(parent: SdkObject) {
@@ -65,7 +66,7 @@ export class Firefox extends BrowserType {
     transport.send(message);
   }
 
-  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
+  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string, interceptorProxy: InterceptorProxy | undefined): string[] {
     const { args = [], headless } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('-profile') || arg.startsWith('--profile'));
     if (userDataDirArg)

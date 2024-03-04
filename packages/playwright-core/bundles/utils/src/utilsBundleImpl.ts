@@ -22,6 +22,8 @@ export const debug = debugLibrary;
 
 export { getProxyForUrl } from 'proxy-from-env';
 
+export { HttpProxyAgent } from 'http-proxy-agent';
+
 export { HttpsProxyAgent } from 'https-proxy-agent';
 
 import jpegLibrary from 'jpeg-js';
@@ -35,6 +37,9 @@ export const mime = mimeLibrary;
 
 import minimatchLibrary from 'minimatch';
 export const minimatch = minimatchLibrary;
+
+import nodeForgeLibrary from 'node-forge';
+export const nodeForge = nodeForgeLibrary;
 
 import openLibrary from 'open';
 export const open = openLibrary;

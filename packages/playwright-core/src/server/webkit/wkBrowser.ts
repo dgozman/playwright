@@ -87,7 +87,7 @@ export class WKBrowser extends Browser {
   }
 
   async doCreateNewContext(options: channels.BrowserNewContextParams): Promise<BrowserContext> {
-    const createOptions = options.proxy ? {
+    const createOptions = (!this.options.interceptorProxy && options.proxy) ? {
       // Enable socks5 hostname resolution on Windows. Workaround can be removed once fixed upstream.
       // See https://github.com/microsoft/playwright/issues/20451
       proxyServer: process.platform === 'win32' ? options.proxy.server.replace(/^socks5:\/\//, 'socks5h://') : options.proxy.server,

@@ -28,7 +28,8 @@ import type * as types from '../types';
 import type { CRPage } from './crPage';
 import { assert, headersArrayToObject, headersObjectToArray } from '../../utils';
 import type { CRServiceWorker } from './crServiceWorker';
-import { isProtocolError, isSessionClosedError } from '../protocolError';
+import { isSessionClosedError } from '../protocolError';
+import { InterceptorProxy, kInterceptingHeaderForCorsPreflight } from '../interceptorProxy';
 
 type SessionInfo = {
   session: CRSession;
@@ -51,17 +52,17 @@ export class CRNetworkManager {
   private _requestIdToRequestPausedEvent = new Map<string, { sessionInfo: SessionInfo, event: Protocol.Fetch.requestPausedPayload }>();
   private _responseExtraInfoTracker = new ResponseExtraInfoTracker();
   private _sessions = new Map<CRSession, SessionInfo>();
+  private _interceptorProxy: InterceptorProxy | undefined;
 
   constructor(page: Page | null, serviceWorker: CRServiceWorker | null) {
     this._page = page;
     this._serviceWorker = serviceWorker;
+    this._interceptorProxy = (this._page || this._serviceWorker)!._browserContext._browser.options.interceptorProxy;
   }
 
   async addSession(session: CRSession, workerFrame?: frames.Frame, isMain?: boolean) {
     const sessionInfo: SessionInfo = { session, isMain, workerFrame, eventListeners: [] };
     sessionInfo.eventListeners = [
-      eventsHelper.addEventListener(session, 'Fetch.requestPaused', this._onRequestPaused.bind(this, sessionInfo)),
-      eventsHelper.addEventListener(session, 'Fetch.authRequired', this._onAuthRequired.bind(this, sessionInfo)),
       eventsHelper.addEventListener(session, 'Network.requestWillBeSent', this._onRequestWillBeSent.bind(this, sessionInfo)),
       eventsHelper.addEventListener(session, 'Network.requestWillBeSentExtraInfo', this._onRequestWillBeSentExtraInfo.bind(this)),
       eventsHelper.addEventListener(session, 'Network.requestServedFromCache', this._onRequestServedFromCache.bind(this)),
@@ -70,6 +71,12 @@ export class CRNetworkManager {
       eventsHelper.addEventListener(session, 'Network.loadingFinished', this._onLoadingFinished.bind(this, sessionInfo)),
       eventsHelper.addEventListener(session, 'Network.loadingFailed', this._onLoadingFailed.bind(this, sessionInfo)),
     ];
+    if (!this._interceptorProxy) {
+      sessionInfo.eventListeners.push(...[
+        eventsHelper.addEventListener(session, 'Fetch.requestPaused', this._onRequestPaused.bind(this, sessionInfo)),
+        eventsHelper.addEventListener(session, 'Fetch.authRequired', this._onAuthRequired.bind(this, sessionInfo)),
+      ]);
+    }
     if (this._page) {
       sessionInfo.eventListeners.push(...[
         eventsHelper.addEventListener(session, 'Network.webSocketCreated', e => this._page!._frameManager.onWebSocketCreated(e.requestId, e.url)),
@@ -87,6 +94,7 @@ export class CRNetworkManager {
       this._updateProtocolRequestInterceptionForSession(sessionInfo, true /* initial */),
       this._setOfflineForSession(sessionInfo, true /* initial */),
       this._setExtraHTTPHeadersForSession(sessionInfo, true /* initial */),
+      this._interceptorProxy ? session.send('Network.setAttachRequestIdHeader' as any, { enabled: true }) : Promise.resolve(),
     ]);
   }
 
@@ -111,6 +119,8 @@ export class CRNetworkManager {
   }
 
   async authenticate(credentials: types.Credentials | null) {
+    if (this._interceptorProxy)
+      return;
     this._credentials = credentials;
     await this._updateProtocolRequestInterception();
   }
@@ -138,6 +148,20 @@ export class CRNetworkManager {
   }
 
   async setRequestInterception(value: boolean) {
+    if (this._interceptorProxy) {
+      if (value === this._userRequestInterceptionEnabled)
+        return;
+      this._userRequestInterceptionEnabled = value;
+      if (!value) {
+        // TODO: continue all requests that are waiting for a decision.
+      }
+      await this._forEachSession(async info => {
+        await info.session.send('Network.setCacheDisabled', { cacheDisabled: value });
+        await this._setExtraHTTPHeadersForSession(info);
+      });
+      return;
+    }
+
     this._userRequestInterceptionEnabled = value;
     await this._updateProtocolRequestInterception();
   }
@@ -173,16 +197,19 @@ export class CRNetworkManager {
   }
 
   private async _setExtraHTTPHeadersForSession(info: SessionInfo, initial?: boolean) {
-    if (initial && !this._extraHTTPHeaders.length)
+    let headers = this._extraHTTPHeaders;
+    if (this._interceptorProxy && this._userRequestInterceptionEnabled)
+      headers = [...headers, { name: kInterceptingHeaderForCorsPreflight, value: '1' }];
+    if (initial && !headers.length)
       return;
-    await info.session.send('Network.setExtraHTTPHeaders', { headers: headersArrayToObject(this._extraHTTPHeaders, false /* lowerCase */) });
+    await info.session.send('Network.setExtraHTTPHeaders', { headers: headersArrayToObject(headers, false /* lowerCase */) });
   }
 
   async clearCache() {
     await this._forEachSession(async info => {
       // Sending 'Network.setCacheDisabled' with 'cacheDisabled = true' will clear the MemoryCache.
       await info.session.send('Network.setCacheDisabled', { cacheDisabled: true });
-      if (!this._protocolRequestInterceptionEnabled)
+      if (!this._protocolRequestInterceptionEnabled && !this._userRequestInterceptionEnabled)
         await info.session.send('Network.setCacheDisabled', { cacheDisabled: false });
       if (!info.workerFrame)
         await info.session.send('Network.clearBrowserCache');
@@ -190,6 +217,15 @@ export class CRNetworkManager {
   }
 
   _onRequestWillBeSent(sessionInfo: SessionInfo, event: Protocol.Network.requestWillBeSentPayload) {
+    if (this._interceptorProxy) {
+      const matching = this._interceptorProxy.matchByRequestId((this._page || this._serviceWorker)!._browserContext, event.requestId);
+      if (matching)
+        this._onRequest(sessionInfo, event, undefined, matching.requestPausedEvent, matching.routeDelegate);
+      else
+        this._requestIdToRequestWillBeSentEvent.set(event.requestId, { sessionInfo, event });
+      return;
+    }
+
     // Request interception doesn't happen for data URLs with Network Service.
     if (this._protocolRequestInterceptionEnabled && !event.request.url.startsWith('data:')) {
       const requestId = event.requestId;
@@ -207,6 +243,12 @@ export class CRNetworkManager {
 
   _onRequestServedFromCache(event: Protocol.Network.requestServedFromCachePayload) {
     this._responseExtraInfoTracker.requestServedFromCache(event);
+    const requestWillBeSentEvent = this._requestIdToRequestWillBeSentEvent.get(event.requestId);
+    if (this._interceptorProxy && requestWillBeSentEvent) {
+      // There will be no network request at all, so we should not wait for the interceptor proxy.
+      this._requestIdToRequestWillBeSentEvent.delete(event.requestId);
+      this._onRequest(requestWillBeSentEvent.sessionInfo, requestWillBeSentEvent.event, undefined, undefined);
+    }
   }
 
   _onRequestWillBeSentExtraInfo(event: Protocol.Network.requestWillBeSentExtraInfoPayload) {
@@ -248,12 +290,12 @@ export class CRNetworkManager {
     const requestId = event.networkId;
     const requestWillBeSentEvent = this._requestIdToRequestWillBeSentEvent.get(requestId);
     if (requestWillBeSentEvent) {
-      this._onRequest(requestWillBeSentEvent.sessionInfo, requestWillBeSentEvent.event, sessionInfo, event);
       this._requestIdToRequestWillBeSentEvent.delete(requestId);
+      this._onRequest(requestWillBeSentEvent.sessionInfo, requestWillBeSentEvent.event, sessionInfo, event);
     } else {
       const existingRequest = this._requestIdToRequest.get(requestId);
       const alreadyContinuedParams = existingRequest?._route?._alreadyContinuedParams;
-      if (alreadyContinuedParams && !event.redirectedRequestId) {
+      if (!this._interceptorProxy && alreadyContinuedParams && !event.redirectedRequestId) {
         // Sometimes Chromium network stack restarts the request internally.
         // For example, when no-cors request hits a "less public address space", it should be resent with cors.
         // There are some more examples here: https://source.chromium.org/chromium/chromium/src/+/main:services/network/url_loader.cc;l=1205-1234;drc=d5dd931e0ad3d9ffe74888ec62a3cc106efd7ea6
@@ -273,7 +315,20 @@ export class CRNetworkManager {
     }
   }
 
-  _onRequest(requestWillBeSentSessionInfo: SessionInfo, requestWillBeSentEvent: Protocol.Network.requestWillBeSentPayload, requestPausedSessionInfo: SessionInfo | undefined, requestPausedEvent: Protocol.Fetch.requestPausedPayload | undefined) {
+  willHandleRequestPausedFromInterceptorProxy(requestId: string) {
+    return this._requestIdToRequestWillBeSentEvent.has(requestId);
+  }
+
+  handleRequestPausedFromInterceptorProxy(data: { requestPausedEvent: Protocol.Fetch.requestPausedPayload, routeDelegate: network.RouteDelegate }) {
+    const requestId = data.requestPausedEvent.networkId!;
+    const requestWillBeSentEvent = this._requestIdToRequestWillBeSentEvent.get(requestId);
+    if (requestWillBeSentEvent) {
+      this._requestIdToRequestWillBeSentEvent.delete(requestId);
+      this._onRequest(requestWillBeSentEvent.sessionInfo, requestWillBeSentEvent.event, undefined, data.requestPausedEvent, data.routeDelegate);
+    }
+  }
+
+  _onRequest(requestWillBeSentSessionInfo: SessionInfo, requestWillBeSentEvent: Protocol.Network.requestWillBeSentPayload, requestPausedSessionInfo: SessionInfo | undefined, requestPausedEvent: Protocol.Fetch.requestPausedPayload | undefined, routeDelegate?: network.RouteDelegate) {
     if (requestWillBeSentEvent.request.url.startsWith('data:'))
       return;
     let redirectedFrom: InterceptableRequest | null = null;
@@ -289,7 +344,7 @@ export class CRNetworkManager {
     // Requests from workers lack frameId, because we receive Network.requestWillBeSent
     // on the worker target. However, we receive Fetch.requestPaused on the page target,
     // and lack workerFrame there. Luckily, Fetch.requestPaused provides a frameId.
-    if (!frame && this._page && requestPausedEvent && requestPausedEvent.frameId)
+    if (!this._interceptorProxy && !frame && this._page && requestPausedEvent && requestPausedEvent.frameId)
       frame = this._page._frameManager.frame(requestPausedEvent.frameId);
 
     // Check if it's main resource request interception (targetId === main frame id).
@@ -300,12 +355,16 @@ export class CRNetworkManager {
       frame = this._page._frameManager.frameAttached(requestWillBeSentEvent.frameId, null);
     }
 
+    let route: RouteImpl | null = null;
+    if (requestPausedEvent)
+      route = new RouteImpl(requestPausedSessionInfo?.session!, requestPausedEvent.requestId, routeDelegate);
+
     // CORS options preflight request is generated by the network stack. If interception is enabled,
     // we accept all CORS options, assuming that this was intended when setting route.
     //
     // Note: it would be better to match the URL against interception patterns.
     const isInterceptedOptionsPreflight = !!requestPausedEvent && requestPausedEvent.request.method === 'OPTIONS' && requestWillBeSentEvent.initiator.type === 'preflight';
-    if (isInterceptedOptionsPreflight && (this._page || this._serviceWorker)!.needsRequestInterception()) {
+    if (!this._interceptorProxy && isInterceptedOptionsPreflight && (this._page || this._serviceWorker)!.needsRequestInterception()) {
       const requestHeaders = requestPausedEvent.request.headers;
       const responseHeaders: Protocol.Fetch.HeaderEntry[] = [
         { name: 'Access-Control-Allow-Origin', value: requestHeaders['Origin'] || '*' },
@@ -314,34 +373,29 @@ export class CRNetworkManager {
       ];
       if (requestHeaders['Access-Control-Request-Headers'])
         responseHeaders.push({ name: 'Access-Control-Allow-Headers', value: requestHeaders['Access-Control-Request-Headers'] });
-      requestPausedSessionInfo!.session._sendMayFail('Fetch.fulfillRequest', {
-        requestId: requestPausedEvent.requestId,
-        responseCode: 204,
-        responsePhrase: network.STATUS_TEXTS['204'],
-        responseHeaders,
+      route?.fulfill({
+        status: 204,
+        headers: responseHeaders,
         body: '',
-      });
+        isBase64: false,
+      }).catch(() => {});
       return;
     }
 
     // Non-service-worker requests MUST have a frame—if they don't, we pretend there was no request
     if (!frame && !this._serviceWorker) {
-      if (requestPausedEvent)
-        requestPausedSessionInfo!.session._sendMayFail('Fetch.continueRequest', { requestId: requestPausedEvent.requestId });
+      route?.continue({ isFallback: true }).catch(() => {});
       return;
     }
 
-    let route = null;
-    if (requestPausedEvent) {
-      // We do not support intercepting redirects.
-      if (redirectedFrom || (!this._userRequestInterceptionEnabled && this._protocolRequestInterceptionEnabled)) {
-        // Chromium does not preserve header overrides between redirects, so we have to do it ourselves.
-        const headers = redirectedFrom?._originalRequestRoute?._alreadyContinuedParams?.headers;
-        requestPausedSessionInfo!.session._sendMayFail('Fetch.continueRequest', { requestId: requestPausedEvent.requestId, headers });
-      } else {
-        route = new RouteImpl(requestPausedSessionInfo!.session, requestPausedEvent.requestId);
-      }
+    // We do not support intercepting redirects.
+    if (route && (redirectedFrom || !this._userRequestInterceptionEnabled)) {
+      // Chromium does not preserve header overrides between redirects, so we have to do it ourselves.
+      const headers = redirectedFrom?._originalRequestRoute?._alreadyContinuedParams?.headers;
+      route.continue({ headers, isFallback: true }).catch(() => {});
+      route = null;
     }
+
     const isNavigationRequest = requestWillBeSentEvent.requestId === requestWillBeSentEvent.loaderId && requestWillBeSentEvent.type === 'Document';
     const documentId = isNavigationRequest ? requestWillBeSentEvent.loaderId : undefined;
     const request = new InterceptableRequest({
@@ -593,14 +647,16 @@ class InterceptableRequest {
 class RouteImpl implements network.RouteDelegate {
   private readonly _session: CRSession;
   private _interceptionId: string;
+  private _customDelegate?: network.RouteDelegate;
   _alreadyContinuedParams: Protocol.Fetch.continueRequestParameters | undefined;
 
-  constructor(session: CRSession, interceptionId: string) {
+  constructor(session: CRSession, interceptionId: string, customDelegate?: network.RouteDelegate) {
     this._session = session;
     this._interceptionId = interceptionId;
+    this._customDelegate = customDelegate;
   }
 
-  async continue(request: network.Request, overrides: types.NormalizedContinueOverrides): Promise<void> {
+  async continue(overrides: types.NormalizedContinueOverrides): Promise<void> {
     this._alreadyContinuedParams = {
       requestId: this._interceptionId!,
       url: overrides.url,
@@ -609,15 +665,20 @@ class RouteImpl implements network.RouteDelegate {
       postData: overrides.postData ? overrides.postData.toString('base64') : undefined
     };
     await catchDisallowedErrors(async () => {
+      if (this._customDelegate)
+        return await this._customDelegate.continue(overrides);
+
       await this._session.send('Fetch.continueRequest', this._alreadyContinuedParams);
     });
   }
 
   async fulfill(response: types.NormalizedFulfillResponse) {
-    const body = response.isBase64 ? response.body : Buffer.from(response.body).toString('base64');
-
-    const responseHeaders = splitSetCookieHeader(response.headers);
     await catchDisallowedErrors(async () => {
+      if (this._customDelegate)
+        return await this._customDelegate.fulfill(response);
+
+      const body = response.isBase64 ? response.body : Buffer.from(response.body).toString('base64');
+      const responseHeaders = splitSetCookieHeader(response.headers);
       await this._session.send('Fetch.fulfillRequest', {
         requestId: this._interceptionId!,
         responseCode: response.status,
@@ -629,9 +690,12 @@ class RouteImpl implements network.RouteDelegate {
   }
 
   async abort(errorCode: string = 'failed') {
-    const errorReason = errorReasons[errorCode];
-    assert(errorReason, 'Unknown error code: ' + errorCode);
     await catchDisallowedErrors(async () => {
+      if (this._customDelegate)
+        return await this._customDelegate.abort(errorCode);
+
+      const errorReason = errorReasons[errorCode];
+      assert(errorReason, 'Unknown error code: ' + errorCode);
       await this._session.send('Fetch.failRequest', {
         requestId: this._interceptionId!,
         errorReason
@@ -646,7 +710,7 @@ async function catchDisallowedErrors(callback: () => Promise<void>) {
   try {
     return await callback();
   } catch (e) {
-    if (isProtocolError(e) && e.message.includes('Invalid http status code or phrase'))
+    if (e.message.includes('Invalid http status code or phrase'))
       throw e;
   }
 }

@@ -178,6 +178,7 @@ it('should delete header with undefined value', async ({ page, server, browserNa
   expect(serverRequest.headers.bar).toBe('b');
 });
 
+// !!!!
 it('should amend method', async ({ page, server }) => {
   const sRequest = server.waitForRequest('/sleep.zzz');
   await page.goto(server.EMPTY_PAGE);

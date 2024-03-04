@@ -294,20 +294,23 @@ export class FrameManager {
       frame.setPendingDocument({ documentId: request._documentId, request });
     if (request._isFavicon) {
       if (route)
-        route.continue(request, { isFallback: true }).catch(() => {});
+        route.continue({ isFallback: true }).catch(() => {});
       return;
     }
     this._page.emitOnContext(BrowserContext.Events.Request, request);
-    if (route) {
-      const r = new network.Route(request, route);
-      if (this._page._serverRequestInterceptor?.(r, request))
-        return;
-      if (this._page._clientRequestInterceptor?.(r, request))
-        return;
-      if (this._page._browserContext._requestInterceptor?.(r, request))
-        return;
-      r.continue({ isFallback: true }).catch(() => {});
-    }
+    if (route)
+      this.handleRoute(request, route);
+  }
+
+  handleRoute(request: network.Request, route: network.RouteDelegate) {
+    const r = new network.Route(request, route);
+    if (this._page._serverRequestInterceptor?.(r, request))
+      return;
+    if (this._page._clientRequestInterceptor?.(r, request))
+      return;
+    if (this._page._browserContext._requestInterceptor?.(r, request))
+      return;
+    r.continue({ isFallback: true }).catch(() => {});
   }
 
   requestReceivedResponse(response: network.Response) {

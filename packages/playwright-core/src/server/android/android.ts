@@ -326,6 +326,7 @@ export class AndroidDevice extends SdkObject {
       gracefullyCloseSet.delete(cleanupArtifactsDir);
       cleanupArtifactsDir().catch(e => debug('pw:android')(`could not cleanup artifacts dir: ${e}`));
     });
+    // TODO: interceptorProxy
     const browserOptions: BrowserOptions = {
       name: 'clank',
       isChromium: true,

@@ -57,8 +57,9 @@ export class FFBrowser extends Browser {
       browser._defaultContext = new FFBrowserContext(browser, undefined, options.persistent);
       promises.push((browser._defaultContext as FFBrowserContext)._initialize());
     }
-    if (options.proxy)
-      promises.push(browser.session.send('Browser.setBrowserProxy', toJugglerProxyOptions(options.proxy)));
+    const proxy = options.interceptorProxy ? options.interceptorProxy.proxySettings() : options.proxy;
+    if (proxy)
+      promises.push(browser.session.send('Browser.setBrowserProxy', toJugglerProxyOptions(proxy)));
     await Promise.all(promises);
     return browser;
   }
@@ -247,7 +248,7 @@ export class FFBrowserContext extends BrowserContext {
         });
       }));
     }
-    if (this._options.proxy) {
+    if (!this._browser.options.interceptorProxy && this._options.proxy) {
       promises.push(this._browser.session.send('Browser.setContextProxy', {
         browserContextId: this._browserContextId,
         ...toJugglerProxyOptions(this._options.proxy)

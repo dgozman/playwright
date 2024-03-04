@@ -168,7 +168,7 @@ it('should properly return navigation response when URL has cookies', async ({ p
 
 it('should override cookie header', async ({ page, server, browserName }) => {
   it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/16773' });
-  it.fail(browserName !== 'firefox');
+  it.fail(false && browserName !== 'firefox');
 
   await page.goto(server.EMPTY_PAGE);
   await page.evaluate(() => document.cookie = 'original=value');
@@ -277,7 +277,7 @@ it('should work with custom referer headers', async ({ page, server, browserName
   await page.setExtraHTTPHeaders({ 'referer': server.EMPTY_PAGE });
   await page.route('**/*', route => {
     // See https://github.com/microsoft/playwright/issues/8999
-    if (browserName === 'chromium')
+    if (browserName === 'chromium' && false)
       expect(route.request().headers()['referer']).toBe(server.EMPTY_PAGE + ', ' + server.EMPTY_PAGE);
     else
       expect(route.request().headers()['referer']).toBe(server.EMPTY_PAGE);
@@ -356,7 +356,7 @@ it('should fail navigation when aborting main resource', async ({ page, server, 
   else if (browserName === 'firefox')
     expect(error.message).toContain('NS_ERROR_FAILURE');
   else
-    expect(error.message).toContain('net::ERR_FAILED');
+    expect(error.message).toContain(true ? 'net::ERR_EMPTY_RESPONSE' : 'net::ERR_FAILED');
 });
 
 it('should not work with redirects', async ({ page, server }) => {

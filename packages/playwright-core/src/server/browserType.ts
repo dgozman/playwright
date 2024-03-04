@@ -40,6 +40,7 @@ import type { CallMetadata } from './instrumentation';
 import { SdkObject } from './instrumentation';
 import { ManualPromise } from '../utils/manualPromise';
 import { type ProtocolError, isProtocolError } from './protocolError';
+import { InterceptorProxy } from './interceptorProxy';
 
 export const kNoXServerRunningError = 'Looks like you launched a headed browser without having a XServer running.\n' +
   'Set either \'headless: true\' or use \'xvfb-run <your-playwright-app>\' before running Playwright.\n\n<3 Playwright Team';
@@ -102,7 +103,10 @@ export abstract class BrowserType extends SdkObject {
   async _innerLaunch(progress: Progress, options: types.LaunchOptions, persistent: channels.BrowserNewContextParams | undefined, protocolLogger: types.ProtocolLogger, maybeUserDataDir?: string): Promise<Browser> {
     options.proxy = options.proxy ? normalizeProxySettings(options.proxy) : undefined;
     const browserLogsCollector = new RecentLogsCollector();
-    const { browserProcess, userDataDir, artifactsDir, transport } = await this._launchProcess(progress, options, !!persistent, browserLogsCollector, maybeUserDataDir);
+    // TODO: make this configurable. For now, disabled for "launchApp" to make codegen/inspector work.
+    const interceptorProxy = this._name === 'chromium' && !options.ignoreDefaultArgs?.length ? new InterceptorProxy() : undefined;
+    await interceptorProxy?.start();
+    const { browserProcess, userDataDir, artifactsDir, transport } = await this._launchProcess(progress, options, !!persistent, browserLogsCollector, maybeUserDataDir, interceptorProxy);
     if ((options as any).__testHookBeforeCreateBrowser)
       await (options as any).__testHookBeforeCreateBrowser();
     const browserOptions: BrowserOptions = {
@@ -118,6 +122,7 @@ export abstract class BrowserType extends SdkObject {
       browserProcess,
       customExecutablePath: options.executablePath,
       proxy: options.proxy,
+      interceptorProxy,
       protocolLogger,
       browserLogsCollector,
       wsEndpoint: options.useWebSocket ? (transport as WebSocketTransport).wsEndpoint : undefined,
@@ -134,7 +139,7 @@ export abstract class BrowserType extends SdkObject {
     return browser;
   }
 
-  private async _launchProcess(progress: Progress, options: types.LaunchOptions, isPersistent: boolean, browserLogsCollector: RecentLogsCollector, userDataDir?: string): Promise<{ browserProcess: BrowserProcess, artifactsDir: string, userDataDir: string, transport: ConnectionTransport }> {
+  private async _launchProcess(progress: Progress, options: types.LaunchOptions, isPersistent: boolean, browserLogsCollector: RecentLogsCollector, userDataDir?: string, interceptorProxy?: InterceptorProxy): Promise<{ browserProcess: BrowserProcess, artifactsDir: string, userDataDir: string, transport: ConnectionTransport }> {
     const {
       ignoreDefaultArgs,
       ignoreAllDefaultArgs,
@@ -166,9 +171,9 @@ export abstract class BrowserType extends SdkObject {
     if (ignoreAllDefaultArgs)
       browserArguments.push(...args);
     else if (ignoreDefaultArgs)
-      browserArguments.push(...this._defaultArgs(options, isPersistent, userDataDir).filter(arg => ignoreDefaultArgs.indexOf(arg) === -1));
+      browserArguments.push(...this._defaultArgs(options, isPersistent, userDataDir, interceptorProxy).filter(arg => ignoreDefaultArgs.indexOf(arg) === -1));
     else
-      browserArguments.push(...this._defaultArgs(options, isPersistent, userDataDir));
+      browserArguments.push(...this._defaultArgs(options, isPersistent, userDataDir, interceptorProxy));
 
     let executable: string;
     if (executablePath) {
@@ -277,6 +282,7 @@ export abstract class BrowserType extends SdkObject {
       headless = false;
     if (downloadsPath && !path.isAbsolute(downloadsPath))
       downloadsPath = path.join(process.cwd(), downloadsPath);
+    // TODO: socksProxy is not aware of interceptorProxy
     if (this.attribution.playwright.options.socksProxyPort)
       proxy = { server: `socks5://127.0.0.1:${this.attribution.playwright.options.socksProxyPort}` };
     return { ...options, devtools, headless, downloadsPath, proxy };
@@ -301,7 +307,7 @@ export abstract class BrowserType extends SdkObject {
     return this._doRewriteStartupLog(error);
   }
 
-  abstract _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[];
+  abstract _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string, interceptorProxy: InterceptorProxy | undefined): string[];
   abstract _connectToTransport(transport: ConnectionTransport, options: BrowserOptions): Promise<Browser>;
   abstract _amendEnvironment(env: Env, userDataDir: string, executable: string, browserArguments: string[]): Env;
   abstract _doRewriteStartupLog(error: ProtocolError): ProtocolError;
