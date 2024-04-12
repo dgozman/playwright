@@ -15,8 +15,26 @@
  */
 
 import React from 'react';
-import { expect, test } from '@playwright/experimental-ct-react';
+import { expect as baseExpect, test } from '@playwright/experimental-ct-react';
+import type { Locator } from '@playwright/test';
 import { SplitView } from './splitView';
+
+const expect = baseExpect.extend({
+  async toHaveBoundingBox(locator: Locator, expected: any) {
+    const name = 'toHaveBoundingBox';
+    try {
+      await expect.poll(() => locator.boundingBox()).toEqual(expected);
+      return { pass: true, expected, name, message: () => '' };
+    } catch (e) {
+      const message = () => this.utils.matcherHint(name, undefined, undefined, { isNot: this.isNot }) +
+          '\n\n' +
+          `Locator: ${locator}\n` +
+          `Expected: ${this.utils.printExpected(expected)}\n` +
+          (e.matcherResult ? `Received: ${this.utils.printReceived(e.matcherResult.actual)}` : '');
+      return { pass: false, expected, name, actual: e.matcherResult?.actual, message };
+    }
+  },
+});
 
 test.use({ viewport: { width: 500, height: 500 } });
 
@@ -25,10 +43,8 @@ test('should render', async ({ mount }) => {
     <div id='main' style={{ border: '1px solid red', flex: 'auto' }}>main</div>
     <div id='sidebar' style={{ border: '1px solid blue', flex: 'auto' }}>sidebar</div>
   </SplitView>);
-  const mainBox = await component.locator('#main').boundingBox();
-  const sidebarBox = await component.locator('#sidebar').boundingBox();
-  expect.soft(mainBox).toEqual({ x: 0, y: 0, width: 500, height: 400 });
-  expect.soft(sidebarBox).toEqual({ x: 0, y: 401, width: 500, height: 99 });
+  await expect.soft(component.locator('#main')).toHaveBoundingBox({ x: 0, y: 0, width: 500, height: 400 });
+  await expect.soft(component.locator('#sidebar')).toHaveBoundingBox({ x: 0, y: 401, width: 500, height: 99 });
 });
 
 test('should render sidebar first', async ({ mount }) => {
@@ -36,10 +52,8 @@ test('should render sidebar first', async ({ mount }) => {
     <div id='main' style={{ border: '1px solid blue', flex: 'auto' }}>main</div>
     <div id='sidebar' style={{ border: '1px solid red', flex: 'auto' }}>sidebar</div>
   </SplitView>);
-  const mainBox = await component.locator('#main').boundingBox();
-  const sidebarBox = await component.locator('#sidebar').boundingBox();
-  expect.soft(mainBox).toEqual({ x: 0, y: 100, width: 500, height: 400 });
-  expect.soft(sidebarBox).toEqual({ x: 0, y: 0, width: 500, height: 99 });
+  await expect.soft(component.locator('#main')).toHaveBoundingBox({ x: 0, y: 100, width: 500, height: 400 });
+  await expect.soft(component.locator('#sidebar')).toHaveBoundingBox({ x: 0, y: 0, width: 500, height: 99 });
 });
 
 test('should render horizontal split', async ({ mount }) => {
@@ -47,10 +61,8 @@ test('should render horizontal split', async ({ mount }) => {
     <div id='main' style={{ border: '1px solid blue', flex: 'auto' }}>main</div>
     <div id='sidebar' style={{ border: '1px solid red', flex: 'auto' }}>sidebar</div>
   </SplitView>);
-  const mainBox = await component.locator('#main').boundingBox();
-  const sidebarBox = await component.locator('#sidebar').boundingBox();
-  expect.soft(mainBox).toEqual({ x: 100, y: 0, width: 400, height: 500 });
-  expect.soft(sidebarBox).toEqual({ x: 0, y: 0, width: 99, height: 500 });
+  await expect.soft(component.locator('#main')).toHaveBoundingBox({ x: 100, y: 0, width: 400, height: 500 });
+  await expect.soft(component.locator('#sidebar')).toHaveBoundingBox({ x: 0, y: 0, width: 99, height: 500 });
 });
 
 test('should hide sidebar', async ({ mount }) => {
@@ -58,8 +70,7 @@ test('should hide sidebar', async ({ mount }) => {
     <div id='main' style={{ border: '1px solid blue', flex: 'auto' }}>main</div>
     <div id='sidebar' style={{ border: '1px solid red', flex: 'auto' }}>sidebar</div>
   </SplitView>);
-  const mainBox = await component.locator('#main').boundingBox();
-  expect.soft(mainBox).toEqual({ x: 0, y: 0, width: 500, height: 500 });
+  await expect.soft(component.locator('#main')).toHaveBoundingBox({ x: 0, y: 0, width: 500, height: 500 });
 });
 
 test('drag resize', async ({ page, mount }) => {
@@ -71,9 +82,7 @@ test('drag resize', async ({ page, mount }) => {
   await page.mouse.down();
   await page.mouse.move(25, 100);
   await page.mouse.up();
-  const mainBox = await component.locator('#main').boundingBox();
-  const sidebarBox = await component.locator('#sidebar').boundingBox();
-  expect.soft(mainBox).toEqual({ x: 0, y: 0, width: 500, height: 100 });
-  expect.soft(sidebarBox).toEqual({ x: 0, y: 101, width: 500, height: 399 });
+  await expect.soft(component.locator('#main')).toHaveBoundingBox({ x: 0, y: 0, width: 500, height: 100 });
+  await expect.soft(component.locator('#sidebar')).toHaveBoundingBox({ x: 0, y: 101, width: 500, height: 399 });
 });
 

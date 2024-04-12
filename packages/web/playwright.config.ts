@@ -27,7 +27,7 @@ const reporters = () => {
   return result;
 };
 
-export default defineConfig({
+const config = defineConfig({
   testDir: 'src',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -36,6 +36,7 @@ export default defineConfig({
     ctPort: 3102,
     trace: 'on-first-retry',
   },
+  ignoreSnapshots: true,
   projects: [
     {
       name: 'chromium',
@@ -43,3 +44,35 @@ export default defineConfig({
     },
   ],
 });
+
+if (process.env.PLAYWRIGHT_SERVICE_ACCESS_KEY) {
+  const os = 'linux';
+  const runId = process.env.PLAYWRIGHT_SERVICE_RUN_ID || new Date().toISOString();
+  process.env.PLAYWRIGHT_SERVICE_RUN_ID = runId;
+
+  const versionMatch = require('../playwright/package.json').version.match(/1\.(\d+)\.0-next/);
+  if (versionMatch)
+    process.env.PW_VERSION_OVERRIDE = '1.' + String(+versionMatch[1] - 1);
+
+  config.ignoreSnapshots = false;
+  config.snapshotPathTemplate = `{testDir}/__screenshots__/{testFilePath}/${os}/{arg}{ext}`;
+
+  config.projects!.push({
+    name: 'service',
+    retries: 0,
+    use: {
+      ...devices['Desktop Chrome'],
+      trace: 'on',
+      connectOptions: {
+        wsEndpoint: `${process.env.PLAYWRIGHT_SERVICE_URL}?cap=${JSON.stringify({ os, runId })}`,
+        timeout: 3 * 60 * 1000,
+        exposeNetwork: '<loopback>',
+        headers: {
+          'x-mpt-access-key': process.env.PLAYWRIGHT_SERVICE_ACCESS_KEY!,
+        },
+      },
+    },
+  });
+}
+
+export default config;

@@ -25,6 +25,7 @@ test('should render collapsed', async ({ mount }) => {
   await expect(component.locator('text=Title')).toBeVisible();
   await expect(component.locator('text=Details')).toBeHidden();
   await expect(component.locator('.codicon-chevron-right')).toBeVisible();
+  await expect(component).toHaveScreenshot();
 });
 
 test('should render expanded', async ({ mount }) => {
@@ -32,6 +33,7 @@ test('should render expanded', async ({ mount }) => {
   await expect(component.locator('text=Title')).toBeVisible();
   await expect(component.locator('text=Details')).toBeVisible();
   await expect(component.locator('.codicon-chevron-down')).toBeVisible();
+  await expect(component).toHaveScreenshot();
 });
 
 test('click should expand', async ({ mount }) => {
@@ -39,4 +41,5 @@ test('click should expand', async ({ mount }) => {
   const component = await mount(<Expandable expanded={false} setExpanded={e => expanded = e} title='Title'>Details text</Expandable>);
   await component.locator('.codicon-chevron-right').click();
   expect(expanded).toBeTruthy();
+  await expect(component).toHaveScreenshot();
 });
