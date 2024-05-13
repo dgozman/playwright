@@ -537,7 +537,7 @@ export class Page extends SdkObject {
   }
 
   needsRequestInterception(): boolean {
-    return !!this._clientRequestInterceptor || !!this._serverRequestInterceptor || !!this._browserContext._requestInterceptor;
+    return !!this._serverRequestInterceptor; //!!this._clientRequestInterceptor || !!this._serverRequestInterceptor || !!this._browserContext._requestInterceptor;
   }
 
   async setClientRequestInterceptor(handler: network.RouteHandler | undefined): Promise<void> {

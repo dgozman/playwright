@@ -48,6 +48,7 @@ export class TestServer {
   readonly PREFIX: string;
   readonly CROSS_PROCESS_PREFIX: string;
   readonly EMPTY_PAGE: string;
+  readonly DOMAIN: string;
 
   static async create(dirPath: string, port: number, loopback?: string): Promise<TestServer> {
     const server = new TestServer(dirPath, port, loopback);
@@ -98,13 +99,12 @@ export class TestServer {
     this._startTime = new Date();
     this._cachedPathPrefix = null;
 
-    const cross_origin = loopback || '127.0.0.1';
-    const same_origin = loopback || 'localhost';
     const protocol = sslOptions ? 'https' : 'http';
+    this.DOMAIN = loopback || 'localhost';
     this.PORT = port;
-    this.PREFIX = `${protocol}://${same_origin}:${port}`;
-    this.CROSS_PROCESS_PREFIX = `${protocol}://${cross_origin}:${port}`;
-    this.EMPTY_PAGE = `${protocol}://${same_origin}:${port}/empty.html`;
+    this.PREFIX = `${protocol}://${this.DOMAIN}:${port}`;
+    this.CROSS_PROCESS_PREFIX = `${protocol}://${loopback || '127.0.0.1'}:${port}`;
+    this.EMPTY_PAGE = `${protocol}://${this.DOMAIN}:${port}/empty.html`;
   }
 
   _onSocket(socket: net.Socket) {

@@ -67,6 +67,7 @@ export abstract class BrowserContext extends SdkObject {
   readonly _activeProgressControllers = new Set<ProgressController>();
   readonly _options: channels.BrowserNewContextParams;
   _requestInterceptor?: network.RouteHandler;
+  _expectedServiceWorkerInterceptorUrls = new Set<string>();
   private _isPersistentContext: boolean;
   private _closedStatus: 'open' | 'closing' | 'closed' = 'open';
   readonly _closePromise: Promise<Error>;

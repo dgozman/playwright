@@ -302,10 +302,10 @@ export class FrameManager {
       const r = new network.Route(request, route);
       if (this._page._serverRequestInterceptor?.(r, request))
         return;
-      if (this._page._clientRequestInterceptor?.(r, request))
-        return;
-      if (this._page._browserContext._requestInterceptor?.(r, request))
-        return;
+      // if (this._page._clientRequestInterceptor?.(r, request))
+      //   return;
+      // if (this._page._browserContext._requestInterceptor?.(r, request))
+      //   return;
       r.continue({ isFallback: true }).catch(() => {});
     }
   }
@@ -651,6 +651,43 @@ export class Frame extends SdkObject {
   private async _gotoAction(progress: Progress, url: string, options: types.GotoOptions): Promise<network.Response | null> {
     const waitUntil = verifyLifecycle('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
     progress.log(`navigating to "${url}", waiting until "${waitUntil}"`);
+
+    const kServiceWorkerScriptName = '__playwright__interceptor__.js';
+    const kPageBodyToRegisterServiceWorker = `<script>console.log('before');navigator.serviceWorker.register("${kServiceWorkerScriptName}");console.log('after');</script>`;
+
+    let originUrl = '';
+    let expectedServiceWorkerUrl = '';
+    try {
+      if (!this._page._serverRequestInterceptor && this === this._page.mainFrame() && url.startsWith('http')) {
+        originUrl = new URL(url).origin + '/__playwright__interceptor__.html';
+        expectedServiceWorkerUrl = new URL(kServiceWorkerScriptName, originUrl).href;
+      }
+    } catch {
+    }
+
+    if (expectedServiceWorkerUrl) {
+      this._page._browserContext._expectedServiceWorkerInterceptorUrls.add(expectedServiceWorkerUrl);
+      await this._page._setServerRequestInterceptor(route => {
+        console.log(`fulfilling page`);
+        route.fulfill({ body: kPageBodyToRegisterServiceWorker, requestUrl: route.request().url() }).catch(() => {});
+        return true;
+      });
+
+      try {
+        console.log(`setting up service worker`);
+        await this._gotoActionInternal(progress, originUrl, { waitUntil: 'commit' });
+        await this.evaluateExpression('navigator.serviceWorker?.ready');
+      } finally {
+        this._page._browserContext._expectedServiceWorkerInterceptorUrls.delete(expectedServiceWorkerUrl);
+        await this._page._setServerRequestInterceptor(undefined).catch(() => {});
+      }
+    }
+
+    return await this._gotoActionInternal(progress, url, options);
+  }
+
+  private async _gotoActionInternal(progress: Progress, url: string, options: types.GotoOptions): Promise<network.Response | null> {
+    const waitUntil = verifyLifecycle('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
     const headers = this._page.extraHTTPHeaders() || [];
     const refererHeader = headers.find(h => h.name.toLowerCase() === 'referer');
     let referer = refererHeader ? refererHeader.value : undefined;

@@ -1030,3 +1030,11 @@ it('should intercept when postData is more than 1MB', async ({ page, server }) =
   }).catch(e => {}), POST_BODY);
   expect(await interceptionPromise).toBe(POST_BODY);
 });
+
+it('should intercept in cross-origin iframe', async ({ page, server }) => {
+  await page.goto(server.EMPTY_PAGE);
+  await page.setContent(`<iframe src="${server.CROSS_PROCESS_PREFIX + '/empty.html'}"></iframe>`);
+  await page.route('**/foo', route => route.fulfill({ body: 'bar' }));
+  const result = await page.frames()[1].evaluate(url => fetch(url).then(r => r.text()), server.CROSS_PROCESS_PREFIX + '/foo');
+  expect(result).toBe('bar');
+});

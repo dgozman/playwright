@@ -4390,7 +4390,7 @@ export interface Page {
    */
   unrouteAll(options?: {
     /**
-     * Specifies whether to wait for already running handlers and what to do if they throw errors:
+     * Specifies wether to wait for already running handlers and what to do if they throw errors:
      * - `'default'` - do not wait for current handler calls (if any) to finish, if unrouted handler throws, it may
      *   result in unhandled error
      * - `'wait'` - wait for current handler calls (if any) to finish
@@ -8828,7 +8828,7 @@ export interface BrowserContext {
    */
   unrouteAll(options?: {
     /**
-     * Specifies whether to wait for already running handlers and what to do if they throw errors:
+     * Specifies wether to wait for already running handlers and what to do if they throw errors:
      * - `'default'` - do not wait for current handler calls (if any) to finish, if unrouted handler throws, it may
      *   result in unhandled error
      * - `'wait'` - wait for current handler calls (if any) to finish
@@ -10375,8 +10375,6 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
    *
    * Throws when `elementHandle` does not point to an element
    * [connected](https://developer.mozilla.org/en-US/docs/Web/API/Node/isConnected) to a Document or a ShadowRoot.
-   *
-   * See [scrolling](https://playwright.dev/docs/input#scrolling) for alternative ways to scroll.
    * @param options
    */
   scrollIntoViewIfNeeded(options?: {
@@ -12577,8 +12575,6 @@ export interface Locator {
    * This method waits for [actionability](https://playwright.dev/docs/actionability) checks, then tries to scroll element into view, unless
    * it is completely visible as defined by
    * [IntersectionObserver](https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API)'s `ratio`.
-   *
-   * See [scrolling](https://playwright.dev/docs/input#scrolling) for alternative ways to scroll.
    * @param options
    */
   scrollIntoViewIfNeeded(options?: {
@@ -13383,7 +13379,7 @@ export interface BrowserType<Unused = {}> {
       origin?: string;
 
       /**
-       * Whether to send `Authorization` header with the first API request. By default, the credentials are sent only when
+       * Whether to send `Authorization` header with the first API request. By deafult, the credentials are sent only when
        * 401 (Unauthorized) response with `WWW-Authenticate` header is received. This option does not affect requests sent
        * from the browser.
        */
@@ -14906,7 +14902,7 @@ export interface AndroidDevice {
       origin?: string;
 
       /**
-       * Whether to send `Authorization` header with the first API request. By default, the credentials are sent only when
+       * Whether to send `Authorization` header with the first API request. By deafult, the credentials are sent only when
        * 401 (Unauthorized) response with `WWW-Authenticate` header is received. This option does not affect requests sent
        * from the browser.
        */
@@ -15637,7 +15633,7 @@ export interface APIRequest {
       origin?: string;
 
       /**
-       * Whether to send `Authorization` header with the first API request. By default, the credentials are sent only when
+       * Whether to send `Authorization` header with the first API request. By deafult, the credentials are sent only when
        * 401 (Unauthorized) response with `WWW-Authenticate` header is received. This option does not affect requests sent
        * from the browser.
        */
@@ -16794,7 +16790,7 @@ export interface Browser extends EventEmitter {
       origin?: string;
 
       /**
-       * Whether to send `Authorization` header with the first API request. By default, the credentials are sent only when
+       * Whether to send `Authorization` header with the first API request. By deafult, the credentials are sent only when
        * 401 (Unauthorized) response with `WWW-Authenticate` header is received. This option does not affect requests sent
        * from the browser.
        */
@@ -17688,7 +17684,7 @@ export interface Electron {
       origin?: string;
 
       /**
-       * Whether to send `Authorization` header with the first API request. By default, the credentials are sent only when
+       * Whether to send `Authorization` header with the first API request. By deafult, the credentials are sent only when
        * 401 (Unauthorized) response with `WWW-Authenticate` header is received. This option does not affect requests sent
        * from the browser.
        */
@@ -18660,8 +18656,7 @@ export interface Mouse {
   }): Promise<void>;
 
   /**
-   * Dispatches a `wheel` event. This method is usually used to manually scroll the page. See
-   * [scrolling](https://playwright.dev/docs/input#scrolling) for alternative ways to scroll.
+   * Dispatches a `wheel` event.
    *
    * **NOTE** Wheel events may cause scrolling if they are not handled, and this method does not wait for the scrolling
    * to finish before returning.
@@ -20356,7 +20351,7 @@ export interface HTTPCredentials {
   origin?: string;
 
   /**
-   * Whether to send `Authorization` header with the first API request. By default, the credentials are sent only when
+   * Whether to send `Authorization` header with the first API request. By deafult, the credentials are sent only when
    * 401 (Unauthorized) response with `WWW-Authenticate` header is received. This option does not affect requests sent
    * from the browser.
    */

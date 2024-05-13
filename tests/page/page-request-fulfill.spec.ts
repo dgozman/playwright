@@ -323,6 +323,29 @@ it('should fulfill with multiple set-cookie', async ({ page, server, isElectron 
     });
   });
   const response = await page.goto(server.EMPTY_PAGE);
+  const browserCookies = await page.context().cookies(server.EMPTY_PAGE);
+  expect(browserCookies).toEqual([
+    {
+      name: 'a',
+      value: 'b',
+      domain: server.DOMAIN,
+      path: '/',
+      expires: -1,
+      httpOnly: false,
+      secure: false,
+      sameSite: 'Lax'
+    },
+    {
+      name: 'c',
+      value: 'd',
+      domain: server.DOMAIN,
+      path: '/',
+      expires: -1,
+      httpOnly: false,
+      secure: false,
+      sameSite: 'Lax'
+    }
+  ]);
   expect((await page.evaluate(() => document.cookie)).split(';').map(s => s.trim()).sort()).toEqual(cookies);
   expect(await response.headerValue('X-Header-1')).toBe('v1');
   expect(await response.headerValue('X-Header-2')).toBe('v2');
