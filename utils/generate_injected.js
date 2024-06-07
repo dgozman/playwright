@@ -57,6 +57,12 @@ const injectedScripts = [
     true,
   ],
   [
+    path.join(ROOT, 'packages', 'playwright-core', 'src', 'client', 'mocks', 'injected', 'webSocketInjected.ts'),
+    path.join(ROOT, 'packages', 'playwright-core', 'lib', 'client', 'mocks', 'injected', 'packed'),
+    path.join(ROOT, 'packages', 'playwright-core', 'src', 'client', 'mocks', 'generated'),
+    true,
+  ],
+  [
     path.join(ROOT, 'packages', 'playwright-ct-core', 'src', 'injected', 'index.ts'),
     path.join(ROOT, 'packages', 'playwright-ct-core', 'lib', 'injected', 'packed'),
     path.join(ROOT, 'packages', 'playwright-ct-core', 'src', 'generated'),

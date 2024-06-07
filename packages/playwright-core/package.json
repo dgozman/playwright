@@ -34,6 +34,7 @@
     "./lib/utils": "./lib/utils/index.js",
     "./lib/utilsBundle": "./lib/utilsBundle.js",
     "./lib/zipBundle": "./lib/zipBundle.js",
+    "./mocks/ws": "./lib/client/mocks/ws.js",
     "./types/protocol": "./types/protocol.d.ts",
     "./types/structs": "./types/structs.d.ts"
   },

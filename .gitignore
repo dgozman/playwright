@@ -11,6 +11,7 @@ node_modules/
 .idea
 yarn.lock
 /packages/playwright-core/src/generated
+/packages/playwright-core/src/client/mocks/generated
 /packages/playwright-ct-core/src/generated
 packages/*/lib/
 drivers/

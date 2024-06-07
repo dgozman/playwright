@@ -11,7 +11,7 @@
 !lib/**/*.svg
 !lib/**/*.ttf
 !lib/utilsBundleImpl/xdg-open
-# Exclude injected files. A preprocessed version of these is included via lib/generated.
+# Exclude injected files. A preprocessed version of these is included via lib/generated or lib/client/mocks/generated.
 # See src/server/injected/README.md.
 lib/**/injected/
 # Include all binaries that we ship with the package.
