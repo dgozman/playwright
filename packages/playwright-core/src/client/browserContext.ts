@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { Page, BindingCall } from './page';
+import { Page } from './page';
 import { Frame } from './frame';
 import * as network from './network';
 import type * as channels from '@protocol/channels';
@@ -45,13 +45,15 @@ import { Dialog } from './dialog';
 import { WebError } from './webError';
 import { TargetClosedError, parseError } from './errors';
 import { Clock } from './clock';
+import { BindingChannel, exposeBindingImpl } from './binding';
 
 export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel> implements api.BrowserContext {
   _pages = new Set<Page>();
   _routes: network.RouteHandler[] = [];
   readonly _browser: Browser | null = null;
   _browserType: BrowserType | undefined;
-  readonly _bindings = new Map<string, (source: structs.BindingSource, ...args: any[]) => any>();
+  readonly _exposedBindingNames = new Set<string>();
+  readonly _idToBinding = new Map<string, Function>();
   _timeoutSettings = new TimeoutSettings();
   _ownerPage: Page | undefined;
   private _closedPromise: Promise<void>;
@@ -87,7 +89,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     this.request = APIRequestContext.from(initializer.requestContext);
     this.clock = new Clock(this);
 
-    this._channel.on('bindingCall', ({ binding }) => this._onBinding(BindingCall.from(binding)));
+    this._channel.on('bindingConnect', ({ bindingChannel }) => this._onBindingConnect(BindingChannel.from(bindingChannel)));
     this._channel.on('close', () => this._onClose());
     this._channel.on('page', ({ page }) => this._onPage(Page.from(page)));
     this._channel.on('route', ({ route }) => this._onRoute(network.Route.from(route)));
@@ -222,11 +224,12 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     await route._innerContinue(true).catch(() => {});
   }
 
-  async _onBinding(bindingCall: BindingCall) {
-    const func = this._bindings.get(bindingCall._initializer.name);
-    if (!func)
-      return;
-    await bindingCall.call(func);
+  _onBindingConnect(bindingChannel: BindingChannel) {
+    let func = this._idToBinding.get(bindingChannel._initializer.bindingId);
+    for (const page of this._pages)
+      func = func || page._idToBinding.get(bindingChannel._initializer.bindingId);
+    if (func)
+      bindingChannel.connect(func);
   }
 
   setDefaultNavigationTimeout(timeout: number | undefined) {
@@ -309,19 +312,29 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   async addInitScript(script: Function | string | { path?: string, content?: string }, arg?: any): Promise<void> {
-    const source = await evaluationScript(script, arg);
-    await this._channel.addInitScript({ source });
+    if (typeof arg === 'function') {
+      const source = await evaluationScript(script);
+      const { bindingId } = await this._channel.addInitScript({ source, needsBinding: true });
+      this._idToBinding.set(bindingId!, arg);
+    } else {
+      const source = await evaluationScript(script, arg);
+      await this._channel.addInitScript({ source });
+    }
   }
 
-  async exposeBinding(name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean } = {}): Promise<void> {
-    await this._channel.exposeBinding({ name, needsHandle: options.handle });
-    this._bindings.set(name, callback);
+  async exposeFunction(name: string, callback: Function) {
+    await this.exposeBinding(name, (source, ...args) => callback(...args));
   }
 
-  async exposeFunction(name: string, callback: Function): Promise<void> {
-    await this._channel.exposeBinding({ name });
-    const binding = (source: structs.BindingSource, ...args: any[]) => callback(...args);
-    this._bindings.set(name, binding);
+  async exposeBinding(name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean } = {}) {
+    if (this._exposedBindingNames.has(name))
+      throw new Error(`Function "${name}" has been already registered`);
+    for (const page of this.pages()) {
+      if (page._exposedBindingNames.has(name))
+        throw new Error(`Function "${name}" has been already registered in one of the pages`);
+    }
+    this._exposedBindingNames.add(name);
+    exposeBindingImpl(this, name, callback, options);
   }
 
   async route(url: URLMatch, handler: network.RouteHandlerCallback, options: { times?: number } = {}): Promise<void> {

@@ -771,8 +771,8 @@ scheme.BrowserContextInitializer = tObject({
   requestContext: tChannel(['APIRequestContext']),
   tracing: tChannel(['Tracing']),
 });
-scheme.BrowserContextBindingCallEvent = tObject({
-  binding: tChannel(['BindingCall']),
+scheme.BrowserContextBindingConnectEvent = tObject({
+  bindingChannel: tChannel(['BindingChannel']),
 });
 scheme.BrowserContextConsoleEvent = tObject({
   type: tString,
@@ -834,8 +834,11 @@ scheme.BrowserContextAddCookiesParams = tObject({
 scheme.BrowserContextAddCookiesResult = tOptional(tObject({}));
 scheme.BrowserContextAddInitScriptParams = tObject({
   source: tString,
+  needsBinding: tOptional(tBoolean),
 });
-scheme.BrowserContextAddInitScriptResult = tOptional(tObject({}));
+scheme.BrowserContextAddInitScriptResult = tObject({
+  bindingId: tOptional(tString),
+});
 scheme.BrowserContextClearCookiesParams = tObject({
   name: tOptional(tString),
   nameRegexSource: tOptional(tString),
@@ -860,11 +863,6 @@ scheme.BrowserContextCookiesParams = tObject({
 scheme.BrowserContextCookiesResult = tObject({
   cookies: tArray(tType('NetworkCookie')),
 });
-scheme.BrowserContextExposeBindingParams = tObject({
-  name: tString,
-  needsHandle: tOptional(tBoolean),
-});
-scheme.BrowserContextExposeBindingResult = tOptional(tObject({}));
 scheme.BrowserContextGrantPermissionsParams = tObject({
   permissions: tArray(tString),
   origin: tOptional(tString),
@@ -1012,9 +1010,6 @@ scheme.PageInitializer = tObject({
   isClosed: tBoolean,
   opener: tOptional(tChannel(['Page'])),
 });
-scheme.PageBindingCallEvent = tObject({
-  binding: tChannel(['BindingCall']),
-});
 scheme.PageCloseEvent = tOptional(tObject({}));
 scheme.PageCrashEvent = tOptional(tObject({}));
 scheme.PageDownloadEvent = tObject({
@@ -1057,8 +1052,11 @@ scheme.PageSetDefaultTimeoutNoReplyParams = tObject({
 scheme.PageSetDefaultTimeoutNoReplyResult = tOptional(tObject({}));
 scheme.PageAddInitScriptParams = tObject({
   source: tString,
+  needsBinding: tOptional(tBoolean),
 });
-scheme.PageAddInitScriptResult = tOptional(tObject({}));
+scheme.PageAddInitScriptResult = tObject({
+  bindingId: tOptional(tString),
+});
 scheme.PageCloseParams = tObject({
   runBeforeUnload: tOptional(tBoolean),
   reason: tOptional(tString),
@@ -1071,11 +1069,6 @@ scheme.PageEmulateMediaParams = tObject({
   forcedColors: tOptional(tEnum(['active', 'none', 'no-override'])),
 });
 scheme.PageEmulateMediaResult = tOptional(tObject({}));
-scheme.PageExposeBindingParams = tObject({
-  name: tString,
-  needsHandle: tOptional(tBoolean),
-});
-scheme.PageExposeBindingResult = tOptional(tObject({}));
 scheme.PageGoBackParams = tObject({
   timeout: tOptional(tNumber),
   waitUntil: tOptional(tType('LifecycleEvent')),
@@ -2180,20 +2173,32 @@ scheme.WebSocketSocketErrorEvent = tObject({
   error: tString,
 });
 scheme.WebSocketCloseEvent = tOptional(tObject({}));
-scheme.BindingCallInitializer = tObject({
+scheme.BindingChannelInitializer = tObject({
+  bindingId: tString,
   frame: tChannel(['Frame']),
-  name: tString,
-  args: tOptional(tArray(tType('SerializedValue'))),
-  handle: tOptional(tChannel(['ElementHandle', 'JSHandle'])),
 });
-scheme.BindingCallRejectParams = tObject({
-  error: tType('SerializedError'),
+scheme.BindingChannelDisconnectedEvent = tOptional(tObject({}));
+scheme.BindingChannelCallEvent = tObject({
+  callId: tNumber,
+  method: tString,
+  args: tArray(tType('SerializedValue')),
 });
-scheme.BindingCallRejectResult = tOptional(tObject({}));
-scheme.BindingCallResolveParams = tObject({
-  result: tType('SerializedArgument'),
+scheme.BindingChannelConnectedParams = tOptional(tObject({}));
+scheme.BindingChannelConnectedResult = tOptional(tObject({}));
+scheme.BindingChannelRespondParams = tObject({
+  callId: tNumber,
+  result: tOptional(tType('SerializedArgument')),
+  error: tOptional(tType('SerializedError')),
 });
-scheme.BindingCallResolveResult = tOptional(tObject({}));
+scheme.BindingChannelRespondResult = tOptional(tObject({}));
+scheme.BindingChannelCallParams = tObject({
+  method: tString,
+  args: tArray(tType('SerializedArgument')),
+});
+scheme.BindingChannelCallResult = tObject({
+  result: tOptional(tType('SerializedValue')),
+  error: tOptional(tType('SerializedError')),
+});
 scheme.DialogInitializer = tObject({
   page: tOptional(tChannel(['Page'])),
   type: tString,

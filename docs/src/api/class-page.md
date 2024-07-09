@@ -620,6 +620,83 @@ The order of evaluation of multiple scripts installed via [`method: BrowserConte
 [`method: Page.addInitScript`] is not defined.
 :::
 
+**Establishing a channel**
+
+You can establish a bidirectional communication channel with the page by passing a function [`option: arg`]. This function should return an object, and async methods on this object will be callable from the page. Similarly, the init script in the page can call the argument function to pass an object that will be available to the test.
+
+Here is an example that exposes a simple object to the page:
+
+```js
+// Define the class to be exposed.
+class Exposed {
+  async add(a: number, b: number) {
+    return a + b;
+  }
+}
+
+// Handle connection from the page.
+const onConnect = async () => new Exposed();
+
+await page.addInitScript(async connect => {
+  // Connect to obtain an "exposed" object.
+  const exposed = await connect();
+
+  // You can now call async methods on it.
+  console.log(await exposed.add(1, 2));
+}, onConnect);
+```
+
+Here is an example that establishes two-way communication:
+
+```js
+import type { BindingSource } from '@playwright/test';
+
+// Interface implemented in the test, exposed to the page.
+interface ExposedToThePage {
+  add(a: number, b: number): Promise<number>;
+  multiply(a: number, b: number): Promise<number>;
+}
+
+// Interface implemented in the page, exposed to the test.
+interface ExposedToTheTest {
+  subtract(a: number, b: number): Promise<number>;
+  divide(a: number, b: number): Promise<number>;
+}
+
+const onConnect = async (exposedToTheTest: ExposedToTheTest, source: BindingSource) => {
+  // "source" explains the frame, page and browser context that triggered this connection.
+  console.log(`Connected from ${source.frame.url()}`);
+
+  // Method of this object will be callable from the page.
+  const exposedToThePage: ExposedToThePage = {
+    add: async (a, b) => a + b,
+    multiply: async (a, b) => a * b,
+  };
+
+  // You can call methods on the object that page has exposed.
+  console.log(await exposedToTheTest.subtract(1, 2));
+  return exposedToThePage;
+};
+
+await page.addInitScript(async connect => {
+  // Method of this object will be callable from the test.
+  const exposedToTheTest: ExposedToTheTest = {
+    subtract: async (a, b) => a - b,
+    divide: async (a, b) => a / b,
+  };
+
+  // Establish a bidirectional channel with an interface on each end.
+  const exposedToThePage = await connect(exposedToTheTest);
+
+  // You can call methods on the object that test has exposed.
+  console.log(await exposedToThePage.add(1, 2));
+}, onConnect);
+```
+
+A few notes:
+* All methods called between the page and the test should accept and return JSON-serializable values.
+* Function in the test is also given a "BindingSource" that explains the origin frame, page and browser context that has invoked "connect" in the page.
+
 ### param: Page.addInitScript.script
 * since: v1.8
 * langs: js

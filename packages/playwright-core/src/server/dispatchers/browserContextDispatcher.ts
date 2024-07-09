@@ -17,7 +17,7 @@
 import { BrowserContext } from '../browserContext';
 import { Dispatcher, existingDispatcher } from './dispatcher';
 import type { DispatcherScope } from './dispatcher';
-import { PageDispatcher, BindingCallDispatcher, WorkerDispatcher } from './pageDispatcher';
+import { PageDispatcher, WorkerDispatcher } from './pageDispatcher';
 import type { FrameDispatcher } from './frameDispatcher';
 import type * as channels from '@protocol/channels';
 import { RouteDispatcher, RequestDispatcher, ResponseDispatcher, APIRequestContextDispatcher } from './networkDispatchers';
@@ -202,19 +202,6 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     this._context.setDefaultTimeout(params.timeout);
   }
 
-  async exposeBinding(params: channels.BrowserContextExposeBindingParams): Promise<void> {
-    await this._context.exposeBinding(params.name, !!params.needsHandle, (source, ...args) => {
-      // When reusing the context, we might have some bindings called late enough,
-      // after context and page dispatchers have been disposed.
-      if (this._disposed)
-        return;
-      const pageDispatcher = PageDispatcher.from(this, source.page);
-      const binding = new BindingCallDispatcher(pageDispatcher, params.name, !!params.needsHandle, source, args);
-      this._dispatchEvent('bindingCall', { binding });
-      return binding.promise();
-    });
-  }
-
   async newPage(params: channels.BrowserContextNewPageParams, metadata: CallMetadata): Promise<channels.BrowserContextNewPageResult> {
     return { page: PageDispatcher.from(this, await this._context.newPage(metadata)) };
   }
@@ -262,8 +249,8 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     await this._context.setHTTPCredentials(params.httpCredentials);
   }
 
-  async addInitScript(params: channels.BrowserContextAddInitScriptParams): Promise<void> {
-    await this._context.addInitScript(params.source);
+  async addInitScript(params: channels.BrowserContextAddInitScriptParams): Promise<channels.BrowserContextAddInitScriptResult> {
+    return await this._context.addInitScript(params.source, params.needsBinding);
   }
 
   async setNetworkInterceptionPatterns(params: channels.BrowserContextSetNetworkInterceptionPatternsParams): Promise<void> {

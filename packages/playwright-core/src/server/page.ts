@@ -526,8 +526,8 @@ export class Page extends SdkObject {
     await this._delegate.bringToFront();
   }
 
-  async addInitScript(source: string) {
-    const initScript = new InitScript(source);
+  async addInitScript(source: string, needsBinding?: boolean): Promise<{ bindingId?: string }> {
+    const initScript = new InitScript(source, !!needsBinding);
     this.initScripts.push(initScript);
     await this._delegate.addInitScript(initScript);
   }
@@ -918,18 +918,35 @@ function addPageBinding(bindingName: string, needsHandle: boolean, utilityScript
 }
 
 export class InitScript {
+  readonly guid: string;
   readonly source: string;
+  readonly evalSource?: string;
+  readonly needsBinding: boolean;
 
-  constructor(source: string) {
-    const guid = createGuid();
-    this.source = `(() => {
-      globalThis.__pwInitScripts = globalThis.__pwInitScripts || {};
-      const hasInitScript = globalThis.__pwInitScripts[${JSON.stringify(guid)}];
-      if (hasInitScript)
-        return;
-      globalThis.__pwInitScripts[${JSON.stringify(guid)}] = true;
-      ${source}
-    })();`;
+  constructor(source: string, needsBinding: boolean) {
+    this.guid = createGuid();
+    this.needsBinding = needsBinding;
+    if (needsBinding) {
+      this.evalSource = `
+      `;
+      this.source = `(() => {
+        globalThis.__pwInitScripts = globalThis.__pwInitScripts || {};
+        const hasInitScript = globalThis.__pwInitScripts[${JSON.stringify(this.guid)}];
+        if (hasInitScript)
+          return;
+        globalThis.__pwInitScripts[${JSON.stringify(this.guid)}] = true;
+        ${source}
+      })();`;
+    } else {
+      this.source = `(() => {
+        globalThis.__pwInitScripts = globalThis.__pwInitScripts || {};
+        const hasInitScript = globalThis.__pwInitScripts[${JSON.stringify(this.guid)}];
+        if (hasInitScript)
+          return;
+        globalThis.__pwInitScripts[${JSON.stringify(this.guid)}] = true;
+        ${source}
+      })();`;
+    }
   }
 }
 

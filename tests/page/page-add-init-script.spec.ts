@@ -16,6 +16,7 @@
  */
 
 import { test as it, expect } from './pageTest';
+import type { BindingSource } from '@playwright/test';
 
 it('should evaluate before anything else on the page', async ({ page, server }) => {
   await page.addInitScript(function() {
@@ -108,4 +109,53 @@ it('init script should run only once in popup', async ({ page, browserName }) =>
     page.evaluate(() => window.open('about:blank')),
   ]);
   expect(await popup.evaluate('callCount')).toEqual(1);
+});
+
+it('should work with function notation', async ({ page, server }) => {
+  interface ExposedToThePage {
+    add(a: number, b: number): Promise<number>;
+    multiply(a: number, b: number): Promise<number>;
+  }
+
+  interface ExposedToTheTest {
+    subtract(a: number, b: number): Promise<number>;
+    divide(a: number, b: number): Promise<number>;
+  }
+
+  const onConnect = async (exposedToTheTest: ExposedToTheTest, source: BindingSource) => {
+    console.log(`Connected from ${source.frame.url()}`);
+
+    const exposedToThePage: ExposedToThePage = {
+      add: async (a, b) => a + b,
+      multiply: async (a, b) => a * b,
+    };
+
+    console.log(await exposedToTheTest.subtract(1, 2));
+    return exposedToThePage;
+  };
+
+  await page.addInitScript(async connect => {
+    const exposedToTheTest: ExposedToTheTest = {
+      subtract: async (a, b) => a - b,
+      divide: async (a, b) => a / b,
+    };
+
+    const exposedToThePage = await connect(exposedToTheTest);
+    console.log(await exposedToThePage.add(1, 2));
+  }, onConnect);
+});
+
+it('should work with simple function notation', async ({ page, server }) => {
+  class Exposed {
+    async add(a: number, b: number) {
+      return a + b;
+    }
+  }
+
+  const onConnect = async () => new Exposed();
+
+  await page.addInitScript(async connect => {
+    const exposed = await connect();
+    console.log(await exposed.add(1, 2));
+  }, onConnect);
 });

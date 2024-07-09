@@ -15,6 +15,7 @@
  */
 
 import { JSHandle, ElementHandle, Frame, Page, BrowserContext } from './types';
+import { EventEmitter } from 'events';
 
 /**
  * Can be converted to JSON
@@ -43,3 +44,44 @@ export type PageFunctionOn<On, Arg2, R> = string | ((on: On, arg2: Unboxed<Arg2>
 export type SmartHandle<T> = [T] extends [Node] ? ElementHandle<T> : JSHandle<T>;
 export type ElementHandleForTag<K extends keyof HTMLElementTagNameMap> = ElementHandle<HTMLElementTagNameMap[K]>;
 export type BindingSource = { context: BrowserContext, page: Page, frame: Frame };
+
+export interface InitScriptSource extends EventEmitter {
+  readonly context: BrowserContext;
+  readonly page: Page;
+  readonly frame: Frame;
+
+  /**
+   * Emitted when the corresponding in-page channel goes away, for example after navigation.
+   */
+  on(event: 'disconnected', listener: (source: InitScriptSource) => any): this;
+
+  /**
+   * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
+   */
+  once(event: 'disconnected', listener: (source: InitScriptSource) => any): this;
+
+  /**
+   * Emitted when the corresponding in-page channel goes away, for example after navigation.
+   */
+  addListener(event: 'disconnected', listener: (source: InitScriptSource) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
+  removeListener(event: 'disconnected', listener: (source: InitScriptSource) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
+  off(event: 'disconnected', listener: (source: InitScriptSource) => any): this;
+
+  /**
+   * Emitted when the corresponding in-page channel goes away, for example after navigation.
+   */
+  prependListener(event: 'disconnected', listener: (source: InitScriptSource) => any): this;
+};
+export type InitScriptPageFunction<Arg> =
+  Arg extends (() => Promise<infer R extends object>) ? (f: () => Promise<R>) => any :
+  Arg extends ((arg: infer A extends object, source: InitScriptSource) => Promise<infer R extends object>) ? (f: (arg: A) => Promise<R>) => any :
+  Arg extends ((arg: infer A extends object) => Promise<infer R extends object>) ? (f: (arg: A) => Promise<R>) => any :
+  (PageFunction<Arg, any> | { path?: string, content?: string });

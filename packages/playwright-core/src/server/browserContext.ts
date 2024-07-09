@@ -404,8 +404,8 @@ export abstract class BrowserContext extends SdkObject {
       this._options.httpCredentials = { username, password: password || '' };
   }
 
-  async addInitScript(source: string) {
-    const initScript = new InitScript(source);
+  async addInitScript(source: string, needsBinding?: boolean): Promise<{ bindingId?: string }> {
+    const initScript = new InitScript(source, !!needsBinding);
     this.initScripts.push(initScript);
     await this.doAddInitScript(initScript);
   }

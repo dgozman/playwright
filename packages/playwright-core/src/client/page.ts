@@ -19,7 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import type * as structs from '../../types/structs';
 import type * as api from '../../types/types';
-import { serializeError, isTargetClosedError, TargetClosedError } from './errors';
+import { isTargetClosedError, TargetClosedError } from './errors';
 import { urlMatches } from '../utils/network';
 import { TimeoutSettings } from '../common/timeoutSettings';
 import type * as channels from '@protocol/channels';
@@ -39,7 +39,7 @@ import { FileChooser } from './fileChooser';
 import type { WaitForNavigationOptions } from './frame';
 import { Frame, verifyLoadState } from './frame';
 import { Keyboard, Mouse, Touchscreen } from './input';
-import { assertMaxArguments, JSHandle, parseResult, serializeArgument } from './jsHandle';
+import { assertMaxArguments } from './jsHandle';
 import type { FrameLocator, Locator, LocatorOptions } from './locator';
 import type { ByRoleOptions } from '../utils/isomorphic/locatorUtils';
 import { trimStringWithEllipsis } from '../utils/isomorphic/stringUtils';
@@ -50,6 +50,7 @@ import { Waiter } from './waiter';
 import { Worker } from './worker';
 import { HarRouter } from './harRouter';
 import type { Clock } from './clock';
+import { exposeBindingImpl } from './binding';
 
 type PDFOptions = Omit<channels.PagePdfParams, 'width' | 'height' | 'margin'> & {
   width?: string | number,
@@ -90,8 +91,8 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   readonly touchscreen: Touchscreen;
   readonly clock: Clock;
 
-
-  readonly _bindings = new Map<string, (source: structs.BindingSource, ...args: any[]) => any>();
+  readonly _exposedBindingNames = new Set<string>();
+  readonly _idToBinding = new Map<string, Function>();
   readonly _timeoutSettings: TimeoutSettings;
   private _video: Video | null = null;
   readonly _opener: Page | null;
@@ -128,7 +129,6 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     this._closed = initializer.isClosed;
     this._opener = Page.fromNullable(initializer.opener);
 
-    this._channel.on('bindingCall', ({ binding }) => this._onBinding(BindingCall.from(binding)));
     this._channel.on('close', () => this._onClose());
     this._channel.on('crash', () => this._onCrash());
     this._channel.on('download', ({ url, suggestedFilename, artifact }) => {
@@ -201,15 +201,6 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     }
 
     await this._browserContext._onRoute(route);
-  }
-
-  async _onBinding(bindingCall: BindingCall) {
-    const func = this._bindings.get(bindingCall._initializer.name);
-    if (func) {
-      await bindingCall.call(func);
-      return;
-    }
-    await this._browserContext._onBinding(bindingCall);
   }
 
   _onWorker(worker: Worker): void {
@@ -330,14 +321,16 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   }
 
   async exposeFunction(name: string, callback: Function) {
-    await this._channel.exposeBinding({ name });
-    const binding = (source: structs.BindingSource, ...args: any[]) => callback(...args);
-    this._bindings.set(name, binding);
+    await this.exposeBinding(name, (source, ...args) => callback(...args));
   }
 
   async exposeBinding(name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean } = {}) {
-    await this._channel.exposeBinding({ name, needsHandle: options.handle });
-    this._bindings.set(name, callback);
+    if (this._exposedBindingNames.has(name))
+      throw new Error(`Function "${name}" has been already registered`);
+    if (this._browserContext._exposedBindingNames.has(name))
+      throw new Error(`Function "${name}" has been already registered in the browser context`);
+    this._exposedBindingNames.add(name);
+    await exposeBindingImpl(this, name, callback, options);
   }
 
   async setExtraHTTPHeaders(headers: Headers) {
@@ -495,8 +488,14 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   }
 
   async addInitScript(script: Function | string | { path?: string, content?: string }, arg?: any) {
-    const source = await evaluationScript(script, arg);
-    await this._channel.addInitScript({ source });
+    if (typeof arg === 'function') {
+      const source = await evaluationScript(script);
+      const { bindingId } = await this._channel.addInitScript({ source, needsBinding: true });
+      this._idToBinding.set(bindingId!, arg);
+    } else {
+      const source = await evaluationScript(script, arg);
+      await this._channel.addInitScript({ source });
+    }
   }
 
   async route(url: URLMatch, handler: RouteHandlerCallback, options: { times?: number } = {}): Promise<void> {
@@ -796,35 +795,6 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
       await fs.promises.writeFile(options.path, result.pdf);
     }
     return result.pdf;
-  }
-}
-
-export class BindingCall extends ChannelOwner<channels.BindingCallChannel> {
-  static from(channel: channels.BindingCallChannel): BindingCall {
-    return (channel as any)._object;
-  }
-
-  constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.BindingCallInitializer) {
-    super(parent, type, guid, initializer);
-  }
-
-  async call(func: (source: structs.BindingSource, ...args: any[]) => any) {
-    try {
-      const frame = Frame.from(this._initializer.frame);
-      const source = {
-        context: frame._page!.context(),
-        page: frame._page!,
-        frame
-      };
-      let result: any;
-      if (this._initializer.handle)
-        result = await func(source, JSHandle.from(this._initializer.handle));
-      else
-        result = await func(source, ...this._initializer.args!.map(parseResult));
-      this._channel.resolve({ result: serializeArgument(result) }).catch(() => {});
-    } catch (e) {
-      this._channel.reject({ error: serializeError(e) }).catch(() => {});
-    }
   }
 }
 

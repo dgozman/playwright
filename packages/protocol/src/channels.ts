@@ -37,7 +37,7 @@ export type InitializerTraits<T> =
     T extends ArtifactChannel ? ArtifactInitializer :
     T extends TracingChannel ? TracingInitializer :
     T extends DialogChannel ? DialogInitializer :
-    T extends BindingCallChannel ? BindingCallInitializer :
+    T extends BindingChannelChannel ? BindingChannelInitializer :
     T extends WebSocketChannel ? WebSocketInitializer :
     T extends ResponseChannel ? ResponseInitializer :
     T extends RouteChannel ? RouteInitializer :
@@ -74,7 +74,7 @@ export type EventsTraits<T> =
     T extends ArtifactChannel ? ArtifactEvents :
     T extends TracingChannel ? TracingEvents :
     T extends DialogChannel ? DialogEvents :
-    T extends BindingCallChannel ? BindingCallEvents :
+    T extends BindingChannelChannel ? BindingChannelEvents :
     T extends WebSocketChannel ? WebSocketEvents :
     T extends ResponseChannel ? ResponseEvents :
     T extends RouteChannel ? RouteEvents :
@@ -111,7 +111,7 @@ export type EventTargetTraits<T> =
     T extends ArtifactChannel ? ArtifactEventTarget :
     T extends TracingChannel ? TracingEventTarget :
     T extends DialogChannel ? DialogEventTarget :
-    T extends BindingCallChannel ? BindingCallEventTarget :
+    T extends BindingChannelChannel ? BindingChannelEventTarget :
     T extends WebSocketChannel ? WebSocketEventTarget :
     T extends ResponseChannel ? ResponseEventTarget :
     T extends RouteChannel ? RouteEventTarget :
@@ -1428,7 +1428,7 @@ export type BrowserContextInitializer = {
   tracing: TracingChannel,
 };
 export interface BrowserContextEventTarget {
-  on(event: 'bindingCall', callback: (params: BrowserContextBindingCallEvent) => void): this;
+  on(event: 'bindingConnect', callback: (params: BrowserContextBindingConnectEvent) => void): this;
   on(event: 'console', callback: (params: BrowserContextConsoleEvent) => void): this;
   on(event: 'close', callback: (params: BrowserContextCloseEvent) => void): this;
   on(event: 'dialog', callback: (params: BrowserContextDialogEvent) => void): this;
@@ -1451,7 +1451,6 @@ export interface BrowserContextChannel extends BrowserContextEventTarget, EventT
   clearPermissions(params?: BrowserContextClearPermissionsParams, metadata?: CallMetadata): Promise<BrowserContextClearPermissionsResult>;
   close(params: BrowserContextCloseParams, metadata?: CallMetadata): Promise<BrowserContextCloseResult>;
   cookies(params: BrowserContextCookiesParams, metadata?: CallMetadata): Promise<BrowserContextCookiesResult>;
-  exposeBinding(params: BrowserContextExposeBindingParams, metadata?: CallMetadata): Promise<BrowserContextExposeBindingResult>;
   grantPermissions(params: BrowserContextGrantPermissionsParams, metadata?: CallMetadata): Promise<BrowserContextGrantPermissionsResult>;
   newPage(params?: BrowserContextNewPageParams, metadata?: CallMetadata): Promise<BrowserContextNewPageResult>;
   setDefaultNavigationTimeoutNoReply(params: BrowserContextSetDefaultNavigationTimeoutNoReplyParams, metadata?: CallMetadata): Promise<BrowserContextSetDefaultNavigationTimeoutNoReplyResult>;
@@ -1477,8 +1476,8 @@ export interface BrowserContextChannel extends BrowserContextEventTarget, EventT
   clockSetFixedTime(params: BrowserContextClockSetFixedTimeParams, metadata?: CallMetadata): Promise<BrowserContextClockSetFixedTimeResult>;
   clockSetSystemTime(params: BrowserContextClockSetSystemTimeParams, metadata?: CallMetadata): Promise<BrowserContextClockSetSystemTimeResult>;
 }
-export type BrowserContextBindingCallEvent = {
-  binding: BindingCallChannel,
+export type BrowserContextBindingConnectEvent = {
+  bindingChannel: BindingChannelChannel,
 };
 export type BrowserContextConsoleEvent = {
   type: string,
@@ -1543,11 +1542,14 @@ export type BrowserContextAddCookiesOptions = {
 export type BrowserContextAddCookiesResult = void;
 export type BrowserContextAddInitScriptParams = {
   source: string,
+  needsBinding?: boolean,
 };
 export type BrowserContextAddInitScriptOptions = {
-
+  needsBinding?: boolean,
 };
-export type BrowserContextAddInitScriptResult = void;
+export type BrowserContextAddInitScriptResult = {
+  bindingId?: string,
+};
 export type BrowserContextClearCookiesParams = {
   name?: string,
   nameRegexSource?: string,
@@ -1590,14 +1592,6 @@ export type BrowserContextCookiesOptions = {
 export type BrowserContextCookiesResult = {
   cookies: NetworkCookie[],
 };
-export type BrowserContextExposeBindingParams = {
-  name: string,
-  needsHandle?: boolean,
-};
-export type BrowserContextExposeBindingOptions = {
-  needsHandle?: boolean,
-};
-export type BrowserContextExposeBindingResult = void;
 export type BrowserContextGrantPermissionsParams = {
   permissions: string[],
   origin?: string,
@@ -1827,7 +1821,7 @@ export type BrowserContextClockSetSystemTimeOptions = {
 export type BrowserContextClockSetSystemTimeResult = void;
 
 export interface BrowserContextEvents {
-  'bindingCall': BrowserContextBindingCallEvent;
+  'bindingConnect': BrowserContextBindingConnectEvent;
   'console': BrowserContextConsoleEvent;
   'close': BrowserContextCloseEvent;
   'dialog': BrowserContextDialogEvent;
@@ -1854,7 +1848,6 @@ export type PageInitializer = {
   opener?: PageChannel,
 };
 export interface PageEventTarget {
-  on(event: 'bindingCall', callback: (params: PageBindingCallEvent) => void): this;
   on(event: 'close', callback: (params: PageCloseEvent) => void): this;
   on(event: 'crash', callback: (params: PageCrashEvent) => void): this;
   on(event: 'download', callback: (params: PageDownloadEvent) => void): this;
@@ -1874,7 +1867,6 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   addInitScript(params: PageAddInitScriptParams, metadata?: CallMetadata): Promise<PageAddInitScriptResult>;
   close(params: PageCloseParams, metadata?: CallMetadata): Promise<PageCloseResult>;
   emulateMedia(params: PageEmulateMediaParams, metadata?: CallMetadata): Promise<PageEmulateMediaResult>;
-  exposeBinding(params: PageExposeBindingParams, metadata?: CallMetadata): Promise<PageExposeBindingResult>;
   goBack(params: PageGoBackParams, metadata?: CallMetadata): Promise<PageGoBackResult>;
   goForward(params: PageGoForwardParams, metadata?: CallMetadata): Promise<PageGoForwardResult>;
   registerLocatorHandler(params: PageRegisterLocatorHandlerParams, metadata?: CallMetadata): Promise<PageRegisterLocatorHandlerResult>;
@@ -1907,9 +1899,6 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   bringToFront(params?: PageBringToFrontParams, metadata?: CallMetadata): Promise<PageBringToFrontResult>;
   updateSubscription(params: PageUpdateSubscriptionParams, metadata?: CallMetadata): Promise<PageUpdateSubscriptionResult>;
 }
-export type PageBindingCallEvent = {
-  binding: BindingCallChannel,
-};
 export type PageCloseEvent = {};
 export type PageCrashEvent = {};
 export type PageDownloadEvent = {
@@ -1958,11 +1947,14 @@ export type PageSetDefaultTimeoutNoReplyOptions = {
 export type PageSetDefaultTimeoutNoReplyResult = void;
 export type PageAddInitScriptParams = {
   source: string,
+  needsBinding?: boolean,
 };
 export type PageAddInitScriptOptions = {
-
+  needsBinding?: boolean,
 };
-export type PageAddInitScriptResult = void;
+export type PageAddInitScriptResult = {
+  bindingId?: string,
+};
 export type PageCloseParams = {
   runBeforeUnload?: boolean,
   reason?: string,
@@ -1985,14 +1977,6 @@ export type PageEmulateMediaOptions = {
   forcedColors?: 'active' | 'none' | 'no-override',
 };
 export type PageEmulateMediaResult = void;
-export type PageExposeBindingParams = {
-  name: string,
-  needsHandle?: boolean,
-};
-export type PageExposeBindingOptions = {
-  needsHandle?: boolean,
-};
-export type PageExposeBindingResult = void;
 export type PageGoBackParams = {
   timeout?: number,
   waitUntil?: LifecycleEvent,
@@ -2392,7 +2376,6 @@ export type PageUpdateSubscriptionOptions = {
 export type PageUpdateSubscriptionResult = void;
 
 export interface PageEvents {
-  'bindingCall': PageBindingCallEvent;
   'close': PageCloseEvent;
   'crash': PageCrashEvent;
   'download': PageDownloadEvent;
@@ -3880,36 +3863,55 @@ export interface WebSocketEvents {
   'close': WebSocketCloseEvent;
 }
 
-// ----------- BindingCall -----------
-export type BindingCallInitializer = {
+// ----------- BindingChannel -----------
+export type BindingChannelInitializer = {
+  bindingId: string,
   frame: FrameChannel,
-  name: string,
-  args?: SerializedValue[],
-  handle?: JSHandleChannel,
 };
-export interface BindingCallEventTarget {
+export interface BindingChannelEventTarget {
+  on(event: 'disconnected', callback: (params: BindingChannelDisconnectedEvent) => void): this;
+  on(event: 'call', callback: (params: BindingChannelCallEvent) => void): this;
 }
-export interface BindingCallChannel extends BindingCallEventTarget, Channel {
-  _type_BindingCall: boolean;
-  reject(params: BindingCallRejectParams, metadata?: CallMetadata): Promise<BindingCallRejectResult>;
-  resolve(params: BindingCallResolveParams, metadata?: CallMetadata): Promise<BindingCallResolveResult>;
+export interface BindingChannelChannel extends BindingChannelEventTarget, Channel {
+  _type_BindingChannel: boolean;
+  connected(params?: BindingChannelConnectedParams, metadata?: CallMetadata): Promise<BindingChannelConnectedResult>;
+  respond(params: BindingChannelRespondParams, metadata?: CallMetadata): Promise<BindingChannelRespondResult>;
+  call(params: BindingChannelCallParams, metadata?: CallMetadata): Promise<BindingChannelCallResult>;
 }
-export type BindingCallRejectParams = {
-  error: SerializedError,
+export type BindingChannelDisconnectedEvent = {};
+export type BindingChannelCallEvent = {
+  callId: number,
+  method: string,
+  args: SerializedValue[],
 };
-export type BindingCallRejectOptions = {
+export type BindingChannelConnectedParams = {};
+export type BindingChannelConnectedOptions = {};
+export type BindingChannelConnectedResult = void;
+export type BindingChannelRespondParams = {
+  callId: number,
+  result?: SerializedArgument,
+  error?: SerializedError,
+};
+export type BindingChannelRespondOptions = {
+  result?: SerializedArgument,
+  error?: SerializedError,
+};
+export type BindingChannelRespondResult = void;
+export type BindingChannelCallParams = {
+  method: string,
+  args: SerializedArgument[],
+};
+export type BindingChannelCallOptions = {
 
 };
-export type BindingCallRejectResult = void;
-export type BindingCallResolveParams = {
-  result: SerializedArgument,
+export type BindingChannelCallResult = {
+  result?: SerializedValue,
+  error?: SerializedError,
 };
-export type BindingCallResolveOptions = {
 
-};
-export type BindingCallResolveResult = void;
-
-export interface BindingCallEvents {
+export interface BindingChannelEvents {
+  'disconnected': BindingChannelDisconnectedEvent;
+  'call': BindingChannelCallEvent;
 }
 
 // ----------- Dialog -----------
