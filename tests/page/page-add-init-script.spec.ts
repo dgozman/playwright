@@ -16,7 +16,7 @@
  */
 
 import { test as it, expect } from './pageTest';
-import type { BindingSource } from '@playwright/test';
+import type { InitScriptSource } from '@playwright/test';
 
 it('should evaluate before anything else on the page', async ({ page, server }) => {
   await page.addInitScript(function() {
@@ -122,15 +122,24 @@ it('should work with function notation', async ({ page, server }) => {
     divide(a: number, b: number): Promise<number>;
   }
 
-  const onConnect = async (exposedToTheTest: ExposedToTheTest, source: BindingSource) => {
-    console.log(`Connected from ${source.frame.url()}`);
+  const logs: string[] = [];
+  const push = logs.push.bind(logs);
+  logs.push = (...items: string[]) => {
+    console.log(...items);
+    return push(...items);
+  };
+  page.on('console', message => logs.push(message.text()));
+
+  const onConnect = async (exposedToTheTest: ExposedToTheTest, source: InitScriptSource) => {
+    logs.push(`connected from ${source.frame.url()}`);
 
     const exposedToThePage: ExposedToThePage = {
       add: async (a, b) => a + b,
       multiply: async (a, b) => a * b,
     };
 
-    console.log(await exposedToTheTest.subtract(1, 2));
+    logs.push(`subtract(1, 2) => ${await exposedToTheTest.subtract(1, 2)}`);
+    logs.push(`divide(4, 2) => ${await exposedToTheTest.divide(4, 2)}`);
     return exposedToThePage;
   };
 
@@ -141,8 +150,19 @@ it('should work with function notation', async ({ page, server }) => {
     };
 
     const exposedToThePage = await connect(exposedToTheTest);
-    console.log(await exposedToThePage.add(1, 2));
+    console.log(`add(1, 2) => ${await exposedToThePage.add(1, 2)}`);
+    console.log(`multiply(2, 2) => ${await exposedToThePage.multiply(2, 2)}`);
   }, onConnect);
+
+  await page.goto(server.EMPTY_PAGE);
+  await expect.poll(() => logs.length).toEqual(5);
+  expect(logs.sort()).toEqual([
+    'add(1, 2) => 3',
+    `connected from ${server.EMPTY_PAGE}`,
+    'divide(4, 2) => 2',
+    'multiply(2, 2) => 4',
+    'subtract(1, 2) => -1',
+  ]);
 });
 
 it('should work with simple function notation', async ({ page, server }) => {
@@ -156,6 +176,11 @@ it('should work with simple function notation', async ({ page, server }) => {
 
   await page.addInitScript(async connect => {
     const exposed = await connect();
-    console.log(await exposed.add(1, 2));
+    console.log('add(1, 2) => ' + await exposed.add(1, 2));
   }, onConnect);
+
+  const promise = page.waitForEvent('console');
+  await page.goto(server.EMPTY_PAGE);
+  const message = await promise;
+  expect(message.text()).toBe('add(1, 2) => 3');
 });

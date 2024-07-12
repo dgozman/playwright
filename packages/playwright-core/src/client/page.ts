@@ -50,7 +50,7 @@ import { Waiter } from './waiter';
 import { Worker } from './worker';
 import { HarRouter } from './harRouter';
 import type { Clock } from './clock';
-import { exposeBindingImpl } from './binding';
+import { InitScriptChannel, exposeBindingImpl } from './initScript';
 
 type PDFOptions = Omit<channels.PagePdfParams, 'width' | 'height' | 'margin'> & {
   width?: string | number,
@@ -92,7 +92,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   readonly clock: Clock;
 
   readonly _exposedBindingNames = new Set<string>();
-  readonly _idToBinding = new Map<string, Function>();
+  readonly _idToInitScriptCallback = new Map<string, Function>();
   readonly _timeoutSettings: TimeoutSettings;
   private _video: Video | null = null;
   readonly _opener: Page | null;
@@ -129,6 +129,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     this._closed = initializer.isClosed;
     this._opener = Page.fromNullable(initializer.opener);
 
+    this._channel.on('initScriptConnect', ({ initScriptChannel }) => this._onInitScriptChannelConnect(InitScriptChannel.from(initScriptChannel)));
     this._channel.on('close', () => this._onClose());
     this._channel.on('crash', () => this._onCrash());
     this._channel.on('download', ({ url, suggestedFilename, artifact }) => {
@@ -207,6 +208,14 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     this._workers.add(worker);
     worker._page = this;
     this.emit(Events.Page.Worker, worker);
+  }
+
+  _onInitScriptChannelConnect(initScriptChannel: InitScriptChannel) {
+    const func = this._idToInitScriptCallback.get(initScriptChannel._initializer.scriptId);
+    if (func)
+      initScriptChannel.connect(func);
+    else
+      this._browserContext._onInitScriptChannelConnect(initScriptChannel);
   }
 
   _onClose() {
@@ -325,12 +334,14 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   }
 
   async exposeBinding(name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean } = {}) {
-    if (this._exposedBindingNames.has(name))
-      throw new Error(`Function "${name}" has been already registered`);
-    if (this._browserContext._exposedBindingNames.has(name))
-      throw new Error(`Function "${name}" has been already registered in the browser context`);
-    this._exposedBindingNames.add(name);
-    await exposeBindingImpl(this, name, callback, options);
+    await this._wrapApiCall(async () => {
+      if (this._exposedBindingNames.has(name))
+        throw new Error(`Function "${name}" has been already registered`);
+      if (this._browserContext._exposedBindingNames.has(name))
+        throw new Error(`Function "${name}" has been already registered in the browser context`);
+      this._exposedBindingNames.add(name);
+      await exposeBindingImpl(this, name, callback, options);
+    });
   }
 
   async setExtraHTTPHeaders(headers: Headers) {
@@ -488,10 +499,16 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   }
 
   async addInitScript(script: Function | string | { path?: string, content?: string }, arg?: any) {
+    await this._addInitScriptImpl(script, arg, false);
+  }
+
+  async _addInitScriptImpl(script: Function | string | { path?: string, content?: string }, arg: any, immediately: boolean) {
     if (typeof arg === 'function') {
-      const source = await evaluationScript(script);
-      const { bindingId } = await this._channel.addInitScript({ source, needsBinding: true });
-      this._idToBinding.set(bindingId!, arg);
+      const source = await evaluationScript(script, undefined, true, true);
+      const { scriptId } = await this._channel.addInitScript({ source, needsChannel: true });
+      this._idToInitScriptCallback.set(scriptId, arg);
+      if (immediately)
+        await this._channel.evalulateInitScript({ scriptId });
     } else {
       const source = await evaluationScript(script, arg);
       await this._channel.addInitScript({ source });

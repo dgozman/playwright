@@ -28,9 +28,14 @@ export function envObjectToArray(env: types.Env): { name: string, value: string 
   return result;
 }
 
-export async function evaluationScript(fun: Function | string | { path?: string, content?: string }, arg?: any, addSourceUrl: boolean = true): Promise<string> {
+export async function evaluationScript(fun: Function | string | { path?: string, content?: string }, arg?: any, addSourceUrl: boolean = true, forceFunctionExpression = false): Promise<string> {
   if (typeof fun === 'function') {
     const source = fun.toString();
+    if (forceFunctionExpression) {
+      if (arg !== undefined)
+        throw new Error('Cannot evaluate a function expression with arguments');
+      return source;
+    }
     const argString = Object.is(arg, undefined) ? 'undefined' : JSON.stringify(arg);
     return `(${source})(${argString})`;
   }

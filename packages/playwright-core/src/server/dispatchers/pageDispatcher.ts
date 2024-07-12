@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import type { BrowserContext } from '../browserContext';
 import type { Frame } from '../frames';
 import { Page, Worker } from '../page';
 import type * as channels from '@protocol/channels';
 import { Dispatcher, existingDispatcher } from './dispatcher';
-import { parseError } from '../errors';
+import { parseError, serializeError } from '../errors';
 import { FrameDispatcher } from './frameDispatcher';
 import { RequestDispatcher } from './networkDispatchers';
 import { ResponseDispatcher } from './networkDispatchers';
@@ -28,12 +27,12 @@ import { serializeResult, parseArgument } from './jsHandleDispatcher';
 import { ElementHandleDispatcher } from './elementHandlerDispatcher';
 import type { FileChooser } from '../fileChooser';
 import type { CRCoverage } from '../chromium/crCoverage';
-import type { JSHandle } from '../javascript';
+import type { InitScriptChannel } from '../initScript';
 import type { CallMetadata } from '../instrumentation';
 import type { Artifact } from '../artifact';
 import { ArtifactDispatcher } from './artifactDispatcher';
 import type { Download } from '../download';
-import { createGuid, urlMatches } from '../../utils';
+import { createGuid, ManualPromise, urlMatches } from '../../utils';
 import type { BrowserContextDispatcher } from './browserContextDispatcher';
 
 export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, BrowserContextDispatcher> implements channels.PageChannel {
@@ -152,7 +151,25 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
   }
 
   async addInitScript(params: channels.PageAddInitScriptParams, metadata: CallMetadata): Promise<channels.PageAddInitScriptResult> {
-    return await this._page.addInitScript(params.source, params.needsBinding);
+    if (!params.needsChannel) {
+      const initScript = await this._page.addInitScript(params.source);
+      return { scriptId: initScript.scriptId };
+    }
+
+    const initScript = await this._page.addInitScript(params.source, async channel => {
+      // When reusing the context, we might have some channels created late enough,
+      // after context and page dispatchers have been disposed.
+      if (this._disposed)
+        return;
+      const dispatcher = new InitScriptChannelDispatcher(this, channel);
+      this._dispatchEvent('initScriptConnect', { initScriptChannel: dispatcher });
+      await dispatcher.connectPromise;
+    });
+    return { scriptId: initScript.scriptId };
+  }
+
+  async evalulateInitScript(params: channels.PageEvalulateInitScriptParams, metadata?: CallMetadata): Promise<channels.PageEvalulateInitScriptResult> {
+    await this._page.evaluateInitScriptImmediately(params.scriptId);
   }
 
   async setNetworkInterceptionPatterns(params: channels.PageSetNetworkInterceptionPatternsParams, metadata: CallMetadata): Promise<void> {
@@ -335,5 +352,58 @@ export class WorkerDispatcher extends Dispatcher<Worker, channels.WorkerChannel,
 
   async evaluateExpressionHandle(params: channels.WorkerEvaluateExpressionHandleParams, metadata: CallMetadata): Promise<channels.WorkerEvaluateExpressionHandleResult> {
     return { handle: ElementHandleDispatcher.fromJSHandle(this, await this._object.evaluateExpressionHandle(params.expression, params.isFunction, parseArgument(params.arg))) };
+  }
+}
+
+export class InitScriptChannelDispatcher extends Dispatcher<{ guid: string }, channels.InitScriptChannelChannel, PageDispatcher | BrowserContextDispatcher> implements channels.InitScriptChannelChannel {
+  _type_InitScriptChannel = true;
+
+  private _initScriptChannel: InitScriptChannel;
+  private _calls = new Map<number, ManualPromise<any>>();
+  readonly connectPromise = new ManualPromise<void>();
+
+  constructor(scope: PageDispatcher, initScriptChannel: InitScriptChannel) {
+    super(scope, { guid: 'initScriptChannel@' + createGuid() }, 'InitScriptChannel', {
+      frame: FrameDispatcher.from(scope.parentScope(), initScriptChannel.frame),
+      scriptId: initScriptChannel.scriptId,
+    });
+    this._initScriptChannel = initScriptChannel;
+    initScriptChannel.oncall = (method, args, callId) => {
+      const promise = new ManualPromise<any>();
+      this._calls.set(callId, promise);
+      this._dispatchEvent('call', { callId, method, args: args.map(arg => serializeResult(arg)) });
+      return promise;
+    };
+    initScriptChannel.ondisconnect = () => {
+      if (!this._disposed) {
+        this._dispatchEvent('disconnected');
+        this._dispose();
+      }
+    };
+  }
+
+  async connected(params: channels.InitScriptChannelConnectedParams): Promise<void> {
+    if (params.error)
+      this.connectPromise.reject(parseError(params.error));
+    else
+      this.connectPromise.resolve();
+  }
+
+  async call(params: channels.InitScriptChannelCallParams): Promise<channels.InitScriptChannelCallResult> {
+    try {
+      const result = await this._initScriptChannel.call(params.method, params.args.map(parseArgument));
+      return { result: serializeResult(result) };
+    } catch (error) {
+      return { error: serializeError(error) };
+    }
+  }
+
+  async respond(params: channels.InitScriptChannelRespondParams): Promise<void> {
+    const promise = this._calls.get(params.callId);
+    this._calls.delete(params.callId);
+    if (params.error)
+      promise?.reject(parseError(params.error));
+    else
+      promise?.resolve(parseArgument(params.result!));
   }
 }

@@ -1046,9 +1046,13 @@ BrowserContext:
     addInitScript:
       parameters:
         source: string
-        needsBinding: boolean?
+        needsChannel: boolean?
       returns:
-        bindingId: string?
+        scriptId: string
+
+    evalulateInitScript:
+      parameters:
+        scriptId: string
 
     clearCookies:
       parameters:
@@ -1250,9 +1254,9 @@ BrowserContext:
 
   events:
 
-    bindingConnect:
+    initScriptConnect:
       parameters:
-        bindingChannel: BindingChannel
+        initScriptChannel: InitScriptChannel
 
     console:
       parameters:
@@ -1342,9 +1346,13 @@ Page:
     addInitScript:
       parameters:
         source: string
-        needsBinding: boolean?
+        needsChannel: boolean?
       returns:
-        bindingId: string?
+        scriptId: string
+
+    evalulateInitScript:
+      parameters:
+        scriptId: string
 
     close:
       parameters:
@@ -1725,6 +1733,10 @@ Page:
         enabled: boolean
 
   events:
+
+    initScriptConnect:
+      parameters:
+        initScriptChannel: InitScriptChannel
 
     close:
 
@@ -3046,11 +3058,11 @@ WebSocket:
     close:
 
 
-BindingChannel:
+InitScriptChannel:
   type: interface
 
   initializer:
-    bindingId: string
+    scriptId: string
     frame: Frame
 
   events:
@@ -3068,7 +3080,8 @@ BindingChannel:
   commands:
 
     connected:
-      error: SerializedError?
+      parameters:
+        error: SerializedError?
 
     respond:
       parameters:

@@ -26,8 +26,9 @@ import * as dom from '../dom';
 import * as frames from '../frames';
 import { helper } from '../helper';
 import * as network from '../network';
-import type { InitScript, PageBinding, PageDelegate } from '../page';
+import type { PageDelegate } from '../page';
 import { Page, Worker } from '../page';
+import { type InitScript, PLAYWRIGHT_BINDING_NAME } from '../initScript';
 import type { Progress } from '../progress';
 import type * as types from '../types';
 import type * as channels from '@protocol/channels';
@@ -180,15 +181,6 @@ export class CRPage implements PageDelegate {
 
   async navigateFrame(frame: frames.Frame, url: string, referrer: string | undefined): Promise<frames.GotoResult> {
     return this._sessionForFrame(frame)._navigate(frame, url, referrer);
-  }
-
-  async exposeBinding(binding: PageBinding) {
-    await this._forAllFrameSessions(frame => frame._initBinding(binding));
-    await Promise.all(this._page.frames().map(frame => frame.evaluateExpression(binding.source).catch(e => {})));
-  }
-
-  async removeExposedBindings() {
-    await this._forAllFrameSessions(frame => frame._removeExposedBindings());
   }
 
   async updateExtraHTTPHeaders(): Promise<void> {
@@ -420,7 +412,6 @@ class FrameSession {
   private _screencastId: string | null = null;
   private _screencastClients = new Set<any>();
   private _evaluateOnNewDocumentIdentifiers: string[] = [];
-  private _exposedBindingNames: string[] = [];
   private _metricsOverride: Protocol.Emulation.setDeviceMetricsOverrideParameters | undefined;
   private _workerSessions = new Map<string, CRSession>();
 
@@ -519,9 +510,7 @@ class FrameSession {
             grantUniveralAccess: true,
             worldName: UTILITY_WORLD_NAME,
           });
-          for (const binding of this._crPage._browserContext._pageBindings.values())
-            frame.evaluateExpression(binding.source).catch(e => {});
-          for (const initScript of this._crPage._browserContext.initScripts)
+          for (const initScript of this._crPage._browserContext.initScripts.values())
             frame.evaluateExpression(initScript.source).catch(e => {});
         }
 
@@ -547,6 +536,7 @@ class FrameSession {
       }),
       this._crPage._networkManager.addSession(this._client, undefined, this._isMainFrame()),
       this._client.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }),
+      this._client.send('Runtime.addBinding', { name: PLAYWRIGHT_BINDING_NAME }),
     ];
     if (!isSettingStorageState) {
       if (this._isMainFrame())
@@ -573,11 +563,9 @@ class FrameSession {
       promises.push(this._updateGeolocation(true));
       promises.push(this._updateEmulateMedia());
       promises.push(this._updateFileChooserInterception(true));
-      for (const binding of this._crPage._page.allBindings())
-        promises.push(this._initBinding(binding));
-      for (const initScript of this._crPage._browserContext.initScripts)
+      for (const initScript of this._crPage._browserContext.initScripts.values())
         promises.push(this._evaluateOnNewDocument(initScript, 'main'));
-      for (const initScript of this._crPage._page.initScripts)
+      for (const initScript of this._crPage._page.initScripts.values())
         promises.push(this._evaluateOnNewDocument(initScript, 'main'));
       if (screencastOptions)
         promises.push(this._startVideoRecording(screencastOptions));
@@ -832,25 +820,6 @@ class FrameSession {
       return;
     const values = event.args.map(arg => context.createHandle(arg));
     this._page._addConsoleMessage(event.type, values, toConsoleMessageLocation(event.stackTrace));
-  }
-
-  async _initBinding(binding: PageBinding) {
-    const [, response] = await Promise.all([
-      this._client.send('Runtime.addBinding', { name: binding.name }),
-      this._client.send('Page.addScriptToEvaluateOnNewDocument', { source: binding.source })
-    ]);
-    this._exposedBindingNames.push(binding.name);
-    if (!binding.name.startsWith('__pw'))
-      this._evaluateOnNewDocumentIdentifiers.push(response.identifier);
-  }
-
-  async _removeExposedBindings() {
-    const toRetain: string[] = [];
-    const toRemove: string[] = [];
-    for (const name of this._exposedBindingNames)
-      (name.startsWith('__pw_') ? toRetain : toRemove).push(name);
-    this._exposedBindingNames = toRetain;
-    await Promise.all(toRemove.map(name => this._client.send('Runtime.removeBinding', { name })));
   }
 
   async _onBindingCalled(event: Protocol.Runtime.bindingCalledPayload) {

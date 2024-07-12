@@ -771,8 +771,8 @@ scheme.BrowserContextInitializer = tObject({
   requestContext: tChannel(['APIRequestContext']),
   tracing: tChannel(['Tracing']),
 });
-scheme.BrowserContextBindingConnectEvent = tObject({
-  bindingChannel: tChannel(['BindingChannel']),
+scheme.BrowserContextInitScriptConnectEvent = tObject({
+  initScriptChannel: tChannel(['InitScriptChannel']),
 });
 scheme.BrowserContextConsoleEvent = tObject({
   type: tString,
@@ -834,11 +834,15 @@ scheme.BrowserContextAddCookiesParams = tObject({
 scheme.BrowserContextAddCookiesResult = tOptional(tObject({}));
 scheme.BrowserContextAddInitScriptParams = tObject({
   source: tString,
-  needsBinding: tOptional(tBoolean),
+  needsChannel: tOptional(tBoolean),
 });
 scheme.BrowserContextAddInitScriptResult = tObject({
-  bindingId: tOptional(tString),
+  scriptId: tString,
 });
+scheme.BrowserContextEvalulateInitScriptParams = tObject({
+  scriptId: tString,
+});
+scheme.BrowserContextEvalulateInitScriptResult = tOptional(tObject({}));
 scheme.BrowserContextClearCookiesParams = tObject({
   name: tOptional(tString),
   nameRegexSource: tOptional(tString),
@@ -1010,6 +1014,9 @@ scheme.PageInitializer = tObject({
   isClosed: tBoolean,
   opener: tOptional(tChannel(['Page'])),
 });
+scheme.PageInitScriptConnectEvent = tObject({
+  initScriptChannel: tChannel(['InitScriptChannel']),
+});
 scheme.PageCloseEvent = tOptional(tObject({}));
 scheme.PageCrashEvent = tOptional(tObject({}));
 scheme.PageDownloadEvent = tObject({
@@ -1052,11 +1059,15 @@ scheme.PageSetDefaultTimeoutNoReplyParams = tObject({
 scheme.PageSetDefaultTimeoutNoReplyResult = tOptional(tObject({}));
 scheme.PageAddInitScriptParams = tObject({
   source: tString,
-  needsBinding: tOptional(tBoolean),
+  needsChannel: tOptional(tBoolean),
 });
 scheme.PageAddInitScriptResult = tObject({
-  bindingId: tOptional(tString),
+  scriptId: tString,
 });
+scheme.PageEvalulateInitScriptParams = tObject({
+  scriptId: tString,
+});
+scheme.PageEvalulateInitScriptResult = tOptional(tObject({}));
 scheme.PageCloseParams = tObject({
   runBeforeUnload: tOptional(tBoolean),
   reason: tOptional(tString),
@@ -2173,29 +2184,31 @@ scheme.WebSocketSocketErrorEvent = tObject({
   error: tString,
 });
 scheme.WebSocketCloseEvent = tOptional(tObject({}));
-scheme.BindingChannelInitializer = tObject({
-  bindingId: tString,
+scheme.InitScriptChannelInitializer = tObject({
+  scriptId: tString,
   frame: tChannel(['Frame']),
 });
-scheme.BindingChannelDisconnectedEvent = tOptional(tObject({}));
-scheme.BindingChannelCallEvent = tObject({
+scheme.InitScriptChannelDisconnectedEvent = tOptional(tObject({}));
+scheme.InitScriptChannelCallEvent = tObject({
   callId: tNumber,
   method: tString,
   args: tArray(tType('SerializedValue')),
 });
-scheme.BindingChannelConnectedParams = tOptional(tObject({}));
-scheme.BindingChannelConnectedResult = tOptional(tObject({}));
-scheme.BindingChannelRespondParams = tObject({
+scheme.InitScriptChannelConnectedParams = tObject({
+  error: tOptional(tType('SerializedError')),
+});
+scheme.InitScriptChannelConnectedResult = tOptional(tObject({}));
+scheme.InitScriptChannelRespondParams = tObject({
   callId: tNumber,
   result: tOptional(tType('SerializedArgument')),
   error: tOptional(tType('SerializedError')),
 });
-scheme.BindingChannelRespondResult = tOptional(tObject({}));
-scheme.BindingChannelCallParams = tObject({
+scheme.InitScriptChannelRespondResult = tOptional(tObject({}));
+scheme.InitScriptChannelCallParams = tObject({
   method: tString,
   args: tArray(tType('SerializedArgument')),
 });
-scheme.BindingChannelCallResult = tObject({
+scheme.InitScriptChannelCallResult = tObject({
   result: tOptional(tType('SerializedValue')),
   error: tOptional(tType('SerializedError')),
 });

@@ -20,8 +20,8 @@ import * as dom from '../dom';
 import type * as frames from '../frames';
 import type { RegisteredListener } from '../../utils/eventsHelper';
 import { eventsHelper } from '../../utils/eventsHelper';
-import type { PageBinding, PageDelegate } from '../page';
-import { InitScript } from '../page';
+import type { PageDelegate } from '../page';
+import { InitScript } from '../initScript';
 import { Page, Worker } from '../page';
 import type * as types from '../types';
 import { getAccessibilityTree } from './ffAccessibility';
@@ -334,14 +334,6 @@ export class FFPage implements PageDelegate {
 
   _onVideoRecordingStarted(event: Protocol.Page.videoRecordingStartedPayload) {
     this._browserContext._browser._videoStarted(this._browserContext, event.screencastId, event.file, this.pageOrError());
-  }
-
-  async exposeBinding(binding: PageBinding) {
-    await this._session.send('Page.addBinding', { name: binding.name, script: binding.source });
-  }
-
-  async removeExposedBindings() {
-    // TODO: implement me.
   }
 
   didClose() {

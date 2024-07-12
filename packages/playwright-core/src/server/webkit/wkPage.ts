@@ -30,7 +30,7 @@ import { eventsHelper } from '../../utils/eventsHelper';
 import { helper } from '../helper';
 import type { JSHandle } from '../javascript';
 import * as network from '../network';
-import type { InitScript, PageBinding, PageDelegate } from '../page';
+import type { PageDelegate } from '../page';
 import { Page } from '../page';
 import type { Progress } from '../progress';
 import type * as types from '../types';
@@ -47,6 +47,7 @@ import { debugLogger } from '../../utils/debugLogger';
 import { ManualPromise } from '../../utils/manualPromise';
 import { BrowserContext } from '../browserContext';
 import { TargetClosedError } from '../errors';
+import { type InitScript, PLAYWRIGHT_BINDING_NAME } from '../initScript';
 
 const UTILITY_WORLD_NAME = '__playwright_utility_world__';
 
@@ -189,6 +190,7 @@ export class WKPage implements PageDelegate {
       promises.push(session.send('Network.setResourceCachingDisabled', { disabled: true }));
       promises.push(session.send('Network.addInterception', { url: '.*', stage: 'request', isRegex: true }));
     }
+    promises.push(session.send('Runtime.addBinding', { name: PLAYWRIGHT_BINDING_NAME }));
     if (this._page._browserContext.isSettingStorageState()) {
       await Promise.all(promises);
       return;
@@ -200,8 +202,6 @@ export class WKPage implements PageDelegate {
     const emulatedMedia = this._page.emulatedMedia();
     if (emulatedMedia.media || emulatedMedia.colorScheme || emulatedMedia.reducedMotion || emulatedMedia.forcedColors)
       promises.push(WKPage._setEmulateMedia(session, emulatedMedia.media, emulatedMedia.colorScheme, emulatedMedia.reducedMotion, emulatedMedia.forcedColors));
-    for (const binding of this._page.allBindings())
-      promises.push(session.send('Runtime.addBinding', { name: binding.name }));
     const bootstrapScript = this._calculateBootstrapScript();
     if (bootstrapScript.length)
       promises.push(session.send('Page.setBootstrapScript', { source: bootstrapScript }));
@@ -767,16 +767,6 @@ export class WKPage implements PageDelegate {
     });
   }
 
-  async exposeBinding(binding: PageBinding): Promise<void> {
-    this._session.send('Runtime.addBinding', { name: binding.name });
-    await this._updateBootstrapScript();
-    await Promise.all(this._page.frames().map(frame => frame.evaluateExpression(binding.source).catch(e => {})));
-  }
-
-  async removeExposedBindings(): Promise<void> {
-    await this._updateBootstrapScript();
-  }
-
   async addInitScript(initScript: InitScript): Promise<void> {
     await this._updateBootstrapScript();
   }
@@ -786,7 +776,7 @@ export class WKPage implements PageDelegate {
   }
 
   private _calculateBootstrapScript(): string {
-    const scripts: string[] = [];
+    let scripts: string[] = [];
     if (!this._page.context()._options.isMobile) {
       scripts.push('delete window.orientation');
       scripts.push('delete window.ondevicemotion');
@@ -795,10 +785,8 @@ export class WKPage implements PageDelegate {
     scripts.push('if (!window.safari) window.safari = { pushNotification: { toString() { return "[object SafariRemoteNotification]"; } } };');
     scripts.push('if (!window.GestureEvent) window.GestureEvent = function GestureEvent() {};');
 
-    for (const binding of this._page.allBindings())
-      scripts.push(binding.source);
-    scripts.push(...this._browserContext.initScripts.map(s => s.source));
-    scripts.push(...this._page.initScripts.map(s => s.source));
+    scripts = scripts.concat([...this._browserContext.initScripts.values()].map(s => s.source));
+    scripts = scripts.concat([...this._page.initScripts.values()].map(s => s.source));
     return scripts.join(';\n');
   }
 

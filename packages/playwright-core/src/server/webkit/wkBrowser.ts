@@ -22,7 +22,7 @@ import type { RegisteredListener } from '../../utils/eventsHelper';
 import { assert } from '../../utils';
 import { eventsHelper } from '../../utils/eventsHelper';
 import * as network from '../network';
-import type { InitScript, Page, PageBinding, PageDelegate } from '../page';
+import type { Page, PageDelegate } from '../page';
 import type { ConnectionTransport } from '../transport';
 import type * as types from '../types';
 import type * as channels from '@protocol/channels';
@@ -32,6 +32,7 @@ import { kPageProxyMessageReceived, WKConnection, WKSession } from './wkConnecti
 import { WKPage } from './wkPage';
 import { TargetClosedError } from '../errors';
 import type { SdkObject } from '../instrumentation';
+import { type InitScript } from '../initScript';
 
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15';
 const BROWSER_VERSION = '17.4';
@@ -323,16 +324,6 @@ export class WKBrowserContext extends BrowserContext {
   async doRemoveInitScripts() {
     for (const page of this.pages())
       await (page._delegate as WKPage)._updateBootstrapScript();
-  }
-
-  async doExposeBinding(binding: PageBinding) {
-    for (const page of this.pages())
-      await (page._delegate as WKPage).exposeBinding(binding);
-  }
-
-  async doRemoveExposedBindings() {
-    for (const page of this.pages())
-      await (page._delegate as WKPage).removeExposedBindings();
   }
 
   async doUpdateRequestInterception(): Promise<void> {

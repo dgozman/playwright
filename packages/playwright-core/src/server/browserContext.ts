@@ -24,9 +24,9 @@ import type { Download } from './download';
 import type * as frames from './frames';
 import { helper } from './helper';
 import * as network from './network';
-import { InitScript } from './page';
+import { InitScript, type InitScriptChannelCallback } from './initScript';
 import type { PageDelegate } from './page';
-import { Page, PageBinding } from './page';
+import { Page } from './page';
 import type { Progress, ProgressController } from './progress';
 import type { Selectors } from './selectors';
 import type * as types from './types';
@@ -65,7 +65,6 @@ export abstract class BrowserContext extends SdkObject {
   };
 
   readonly _timeoutSettings = new TimeoutSettings();
-  readonly _pageBindings = new Map<string, PageBinding>();
   readonly _activeProgressControllers = new Set<ProgressController>();
   readonly _options: channels.BrowserNewContextParams;
   _requestInterceptor?: network.RouteHandler;
@@ -85,7 +84,7 @@ export abstract class BrowserContext extends SdkObject {
   private _customCloseHandler?: () => Promise<any>;
   readonly _tempDirs: string[] = [];
   private _settingStorageState = false;
-  readonly initScripts: InitScript[] = [];
+  readonly initScripts = new Map<string, InitScript>();
   private _routesInFlight = new Set<network.Route>();
   private _debugger!: Debugger;
   _closeReason: string | undefined;
@@ -215,7 +214,6 @@ export abstract class BrowserContext extends SdkObject {
     page?._frameManager.setCloseAllOpeningDialogs(false);
 
     await this._resetStorage();
-    await this._removeExposedBindings();
     await this._removeInitScripts();
     this.clock.markAsUninstalled();
     // TODO: following can be optimized to not perform noops.
@@ -269,8 +267,6 @@ export abstract class BrowserContext extends SdkObject {
   protected abstract doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void>;
   protected abstract doAddInitScript(initScript: InitScript): Promise<void>;
   protected abstract doRemoveInitScripts(): Promise<void>;
-  protected abstract doExposeBinding(binding: PageBinding): Promise<void>;
-  protected abstract doRemoveExposedBindings(): Promise<void>;
   protected abstract doUpdateRequestInterception(): Promise<void>;
   protected abstract doClose(reason: string | undefined): Promise<void>;
   protected abstract onClosePersistent(): void;
@@ -306,26 +302,6 @@ export abstract class BrowserContext extends SdkObject {
 
   setHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
     return this.doSetHTTPCredentials(httpCredentials);
-  }
-
-  async exposeBinding(name: string, needsHandle: boolean, playwrightBinding: frames.FunctionWithSource): Promise<void> {
-    if (this._pageBindings.has(name))
-      throw new Error(`Function "${name}" has been already registered`);
-    for (const page of this.pages()) {
-      if (page.getBinding(name))
-        throw new Error(`Function "${name}" has been already registered in one of the pages`);
-    }
-    const binding = new PageBinding(name, playwrightBinding, needsHandle);
-    this._pageBindings.set(name, binding);
-    await this.doExposeBinding(binding);
-  }
-
-  async _removeExposedBindings() {
-    for (const key of this._pageBindings.keys()) {
-      if (!key.startsWith('__pw'))
-        this._pageBindings.delete(key);
-    }
-    await this.doRemoveExposedBindings();
   }
 
   async grantPermissions(permissions: string[], origin?: string) {
@@ -404,14 +380,22 @@ export abstract class BrowserContext extends SdkObject {
       this._options.httpCredentials = { username, password: password || '' };
   }
 
-  async addInitScript(source: string, needsBinding?: boolean): Promise<{ bindingId?: string }> {
-    const initScript = new InitScript(source, !!needsBinding);
-    this.initScripts.push(initScript);
+  async addInitScript(source: string, channelCallback?: InitScriptChannelCallback): Promise<InitScript> {
+    const initScript = new InitScript(source, channelCallback);
+    this.initScripts.set(initScript.scriptId, initScript);
     await this.doAddInitScript(initScript);
+    return initScript;
+  }
+
+  async evaluateInitScriptImmediately(scriptId: string) {
+    const script = this.initScripts.get(scriptId);
+    if (!script)
+      throw new Error('Init script with given id was not found');
+    await this.safeNonStallingEvaluateInAllFrames(script.source, 'main');
   }
 
   async _removeInitScripts(): Promise<void> {
-    this.initScripts.splice(0, this.initScripts.length);
+    this.initScripts.clear();
     await this.doRemoveInitScripts();
   }
 

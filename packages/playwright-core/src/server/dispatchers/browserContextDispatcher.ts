@@ -17,7 +17,7 @@
 import { BrowserContext } from '../browserContext';
 import { Dispatcher, existingDispatcher } from './dispatcher';
 import type { DispatcherScope } from './dispatcher';
-import { PageDispatcher, WorkerDispatcher } from './pageDispatcher';
+import { InitScriptChannelDispatcher, PageDispatcher, WorkerDispatcher } from './pageDispatcher';
 import type { FrameDispatcher } from './frameDispatcher';
 import type * as channels from '@protocol/channels';
 import { RouteDispatcher, RequestDispatcher, ResponseDispatcher, APIRequestContextDispatcher } from './networkDispatchers';
@@ -250,7 +250,25 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   }
 
   async addInitScript(params: channels.BrowserContextAddInitScriptParams): Promise<channels.BrowserContextAddInitScriptResult> {
-    return await this._context.addInitScript(params.source, params.needsBinding);
+    if (!params.needsChannel) {
+      const initScript = await this._context.addInitScript(params.source);
+      return { scriptId: initScript.scriptId };
+    }
+
+    const initScript = await this._context.addInitScript(params.source, async channel => {
+      // When reusing the context, we might have some channels created late enough,
+      // after context and page dispatchers have been disposed.
+      if (this._disposed)
+        return;
+      const dispatcher = new InitScriptChannelDispatcher(PageDispatcher.from(this, channel.frame._page), channel);
+      this._dispatchEvent('initScriptConnect', { initScriptChannel: dispatcher });
+      await dispatcher.connectPromise;
+    });
+    return { scriptId: initScript.scriptId };
+  }
+
+  async evalulateInitScript(params: channels.BrowserContextEvalulateInitScriptParams, metadata?: CallMetadata): Promise<channels.BrowserContextEvalulateInitScriptResult> {
+    await this._context.evaluateInitScriptImmediately(params.scriptId);
   }
 
   async setNetworkInterceptionPatterns(params: channels.BrowserContextSetNetworkInterceptionPatternsParams): Promise<void> {

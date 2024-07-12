@@ -21,7 +21,8 @@ import type { BrowserOptions } from '../browser';
 import { Browser } from '../browser';
 import { assertBrowserContextIsNotOwned, BrowserContext, verifyGeolocation } from '../browserContext';
 import * as network from '../network';
-import type { InitScript, Page, PageBinding, PageDelegate } from '../page';
+import type { Page, PageDelegate } from '../page';
+import { type InitScript, PLAYWRIGHT_BINDING_NAME } from '../initScript';
 import type { ConnectionTransport } from '../transport';
 import type * as types from '../types';
 import type * as channels from '@protocol/channels';
@@ -179,6 +180,7 @@ export class FFBrowserContext extends BrowserContext {
     assert(!this._ffPages().length);
     const browserContextId = this._browserContextId;
     const promises: Promise<any>[] = [super._initialize()];
+    promises.push(this._browser.session.send('Browser.addBinding', { browserContextId: this._browserContextId, name: PLAYWRIGHT_BINDING_NAME, script: '' }));
     if (this._options.acceptDownloads !== 'internal-browser-default') {
       promises.push(this._browser.session.send('Browser.setDownloadOptions', {
         browserContextId,
@@ -353,21 +355,12 @@ export class FFBrowserContext extends BrowserContext {
   }
 
   async doAddInitScript(initScript: InitScript) {
-    await this._browser.session.send('Browser.setInitScripts', { browserContextId: this._browserContextId, scripts: this.initScripts.map(script => ({ script: script.source })) });
+    const scripts = [...this.initScripts.values()].map(script => ({ script: script.source }));
+    await this._browser.session.send('Browser.setInitScripts', { browserContextId: this._browserContextId, scripts });
   }
 
   async doRemoveInitScripts() {
     await this._browser.session.send('Browser.setInitScripts', { browserContextId: this._browserContextId, scripts: [] });
-  }
-
-  async doExposeBinding(binding: PageBinding) {
-    await this._browser.session.send('Browser.addBinding', { browserContextId: this._browserContextId, name: binding.name, script: binding.source });
-  }
-
-  async doRemoveExposedBindings() {
-    // TODO: implement me.
-    // This is not a critical problem, what ends up happening is
-    // an old binding will be restored upon page reload and will point nowhere.
   }
 
   async doUpdateRequestInterception(): Promise<void> {

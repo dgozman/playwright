@@ -22,7 +22,8 @@ import { ElementHandle } from './elementHandle';
 import { Frame } from './frame';
 import { JSHandle } from './jsHandle';
 import { Request, Response, Route, WebSocket } from './network';
-import { Page, BindingCall } from './page';
+import { Page } from './page';
+import { InitScriptChannel } from './initScript';
 import { Worker } from './worker';
 import { Dialog } from './dialog';
 import { parseError, TargetClosedError } from './errors';
@@ -236,9 +237,6 @@ export class Connection extends EventEmitter {
       case 'Artifact':
         result = new Artifact(parent, type, guid, initializer);
         break;
-      case 'BindingCall':
-        result = new BindingCall(parent, type, guid, initializer);
-        break;
       case 'Browser':
         result = new Browser(parent, type, guid, initializer);
         break;
@@ -265,6 +263,9 @@ export class Connection extends EventEmitter {
         break;
       case 'Frame':
         result = new Frame(parent, type, guid, initializer);
+        break;
+      case 'InitScriptChannel':
+        result = new InitScriptChannel(parent, type, guid, initializer);
         break;
       case 'JSHandle':
         result = new JSHandle(parent, type, guid, initializer);

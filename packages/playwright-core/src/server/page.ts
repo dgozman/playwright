@@ -31,7 +31,7 @@ import * as accessibility from './accessibility';
 import { FileChooser } from './fileChooser';
 import type { Progress } from './progress';
 import { ProgressController } from './progress';
-import { LongStandingScope, assert, createGuid, isError } from '../utils';
+import { LongStandingScope, assert } from '../utils';
 import { ManualPromise } from '../utils/manualPromise';
 import { debugLogger } from '../utils/debugLogger';
 import type { ImageComparatorOptions } from '../utils/comparators';
@@ -41,10 +41,9 @@ import { SdkObject } from './instrumentation';
 import type { Artifact } from './artifact';
 import type { TimeoutOptions } from '../common/types';
 import { isInvalidSelectorError } from '../utils/isomorphic/selectorParser';
-import { parseEvaluationResultValue, source } from './isomorphic/utilityScriptSerializers';
-import type { SerializedValue } from './isomorphic/utilityScriptSerializers';
 import { TargetClosedError } from './errors';
 import { asLocator } from '../utils/isomorphic/locatorGenerators';
+import { InitScript, type InitScriptChannelCallback } from './initScript';
 
 export interface PageDelegate {
   readonly rawMouse: input.RawMouse;
@@ -54,8 +53,6 @@ export interface PageDelegate {
   reload(): Promise<void>;
   goBack(): Promise<boolean>;
   goForward(): Promise<boolean>;
-  exposeBinding(binding: PageBinding): Promise<void>;
-  removeExposedBindings(): Promise<void>;
   addInitScript(initScript: InitScript): Promise<void>;
   removeInitScripts(): Promise<void>;
   closePage(runBeforeUnload: boolean): Promise<void>;
@@ -153,8 +150,7 @@ export class Page extends SdkObject {
   private _extraHTTPHeaders: types.HeadersArray | undefined;
   private _emulatedMedia: Partial<EmulatedMedia> = {};
   private _interceptFileChooser = false;
-  private readonly _pageBindings = new Map<string, PageBinding>();
-  readonly initScripts: InitScript[] = [];
+  readonly initScripts = new Map<string, InitScript>();
   readonly _screenshotter: Screenshotter;
   readonly _frameManager: frames.FrameManager;
   readonly accessibility: accessibility.Accessibility;
@@ -254,7 +250,6 @@ export class Page extends SdkObject {
     this.setDefaultTimeout(undefined);
     this._locatorHandlers.clear();
 
-    await this._removeExposedBindings();
     await this._removeInitScripts();
     await this.setClientRequestInterceptor(undefined);
     await this._setServerRequestInterceptor(undefined);
@@ -336,21 +331,7 @@ export class Page extends SdkObject {
   }
 
   async exposeBinding(name: string, needsHandle: boolean, playwrightBinding: frames.FunctionWithSource) {
-    if (this._pageBindings.has(name))
-      throw new Error(`Function "${name}" has been already registered`);
-    if (this._browserContext._pageBindings.has(name))
-      throw new Error(`Function "${name}" has been already registered in the browser context`);
-    const binding = new PageBinding(name, playwrightBinding, needsHandle);
-    this._pageBindings.set(name, binding);
-    await this._delegate.exposeBinding(binding);
-  }
-
-  async _removeExposedBindings() {
-    for (const key of this._pageBindings.keys()) {
-      if (!key.startsWith('__pw'))
-        this._pageBindings.delete(key);
-    }
-    await this._delegate.removeExposedBindings();
+    // !!!!! TODO
   }
 
   setExtraHTTPHeaders(headers: types.HeadersArray) {
@@ -365,7 +346,7 @@ export class Page extends SdkObject {
   async _onBindingCalled(payload: string, context: dom.FrameExecutionContext) {
     if (this._closedState === 'closed')
       return;
-    await PageBinding.dispatch(this, payload, context);
+    await InitScript.dispatchBinding(this, payload, context);
   }
 
   _addConsoleMessage(type: string, args: js.JSHandle[], location: types.ConsoleMessageLocation, text?: string) {
@@ -526,14 +507,22 @@ export class Page extends SdkObject {
     await this._delegate.bringToFront();
   }
 
-  async addInitScript(source: string, needsBinding?: boolean): Promise<{ bindingId?: string }> {
-    const initScript = new InitScript(source, !!needsBinding);
-    this.initScripts.push(initScript);
+  async addInitScript(source: string, channelCallback?: InitScriptChannelCallback): Promise<InitScript> {
+    const initScript = new InitScript(source, channelCallback);
+    this.initScripts.set(initScript.scriptId, initScript);
     await this._delegate.addInitScript(initScript);
+    return initScript;
+  }
+
+  async evaluateInitScriptImmediately(scriptId: string) {
+    const script = this.initScripts.get(scriptId);
+    if (!script)
+      throw new Error('Init script with given id was not found');
+    await this.safeNonStallingEvaluateInAllFrames(script.source, 'main');
   }
 
   async _removeInitScripts() {
-    this.initScripts.splice(0, this.initScripts.length);
+    this.initScripts.clear();
     await this._delegate.removeInitScripts();
   }
 
@@ -727,14 +716,6 @@ export class Page extends SdkObject {
       this._browserContext.addVisitedOrigin(origin);
   }
 
-  allBindings() {
-    return [...this._browserContext._pageBindings.values(), ...this._pageBindings.values()];
-  }
-
-  getBinding(name: string) {
-    return this._pageBindings.get(name) || this._browserContext._pageBindings.get(name);
-  }
-
   setScreencastOptions(options: { width: number, height: number, quality: number } | null) {
     this._delegate.setScreencastOptions(options).catch(e => debugLogger.log('error', e));
     this._frameThrottler.setThrottlingEnabled(!!options);
@@ -809,144 +790,6 @@ export class Worker extends SdkObject {
 
   async evaluateExpressionHandle(expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
     return js.evaluateExpression(await this._executionContextPromise, expression, { returnByValue: false, isFunction }, arg);
-  }
-}
-
-type BindingPayload = {
-  name: string;
-  seq: number;
-  serializedArgs?: SerializedValue[],
-};
-
-export class PageBinding {
-  readonly name: string;
-  readonly playwrightFunction: frames.FunctionWithSource;
-  readonly source: string;
-  readonly needsHandle: boolean;
-
-  constructor(name: string, playwrightFunction: frames.FunctionWithSource, needsHandle: boolean) {
-    this.name = name;
-    this.playwrightFunction = playwrightFunction;
-    this.source = `(${addPageBinding.toString()})(${JSON.stringify(name)}, ${needsHandle}, (${source})())`;
-    this.needsHandle = needsHandle;
-  }
-
-  static async dispatch(page: Page, payload: string, context: dom.FrameExecutionContext) {
-    const { name, seq, serializedArgs } = JSON.parse(payload) as BindingPayload;
-    try {
-      assert(context.world);
-      const binding = page.getBinding(name)!;
-      let result: any;
-      if (binding.needsHandle) {
-        const handle = await context.evaluateHandle(takeHandle, { name, seq }).catch(e => null);
-        result = await binding.playwrightFunction({ frame: context.frame, page, context: page._browserContext }, handle);
-      } else {
-        const args = serializedArgs!.map(a => parseEvaluationResultValue(a));
-        result = await binding.playwrightFunction({ frame: context.frame, page, context: page._browserContext }, ...args);
-      }
-      context.evaluate(deliverResult, { name, seq, result }).catch(e => debugLogger.log('error', e));
-    } catch (error) {
-      if (isError(error))
-        context.evaluate(deliverError, { name, seq, message: error.message, stack: error.stack }).catch(e => debugLogger.log('error', e));
-      else
-        context.evaluate(deliverErrorValue, { name, seq, error }).catch(e => debugLogger.log('error', e));
-    }
-
-    function takeHandle(arg: { name: string, seq: number }) {
-      const handle = (globalThis as any)[arg.name]['handles'].get(arg.seq);
-      (globalThis as any)[arg.name]['handles'].delete(arg.seq);
-      return handle;
-    }
-
-    function deliverResult(arg: { name: string, seq: number, result: any }) {
-      (globalThis as any)[arg.name]['callbacks'].get(arg.seq).resolve(arg.result);
-      (globalThis as any)[arg.name]['callbacks'].delete(arg.seq);
-    }
-
-    function deliverError(arg: { name: string, seq: number, message: string, stack: string | undefined }) {
-      const error = new Error(arg.message);
-      error.stack = arg.stack;
-      (globalThis as any)[arg.name]['callbacks'].get(arg.seq).reject(error);
-      (globalThis as any)[arg.name]['callbacks'].delete(arg.seq);
-    }
-
-    function deliverErrorValue(arg: { name: string, seq: number, error: any }) {
-      (globalThis as any)[arg.name]['callbacks'].get(arg.seq).reject(arg.error);
-      (globalThis as any)[arg.name]['callbacks'].delete(arg.seq);
-    }
-  }
-}
-
-function addPageBinding(bindingName: string, needsHandle: boolean, utilityScriptSerializers: ReturnType<typeof source>) {
-  const binding = (globalThis as any)[bindingName];
-  if (binding.__installed)
-    return;
-  (globalThis as any)[bindingName] = (...args: any[]) => {
-    const me = (globalThis as any)[bindingName];
-    if (needsHandle && args.slice(1).some(arg => arg !== undefined))
-      throw new Error(`exposeBindingHandle supports a single argument, ${args.length} received`);
-    let callbacks = me['callbacks'];
-    if (!callbacks) {
-      callbacks = new Map();
-      me['callbacks'] = callbacks;
-    }
-    const seq: number = (me['lastSeq'] || 0) + 1;
-    me['lastSeq'] = seq;
-    let handles = me['handles'];
-    if (!handles) {
-      handles = new Map();
-      me['handles'] = handles;
-    }
-    const promise = new Promise((resolve, reject) => callbacks.set(seq, { resolve, reject }));
-    let payload: BindingPayload;
-    if (needsHandle) {
-      handles.set(seq, args[0]);
-      payload = { name: bindingName, seq };
-    } else {
-      const serializedArgs = [];
-      for (let i = 0; i < args.length; i++) {
-        serializedArgs[i] = utilityScriptSerializers.serializeAsCallArgument(args[i], v => {
-          return { fallThrough: v };
-        });
-      }
-      payload = { name: bindingName, seq, serializedArgs };
-    }
-    binding(JSON.stringify(payload));
-    return promise;
-  };
-  (globalThis as any)[bindingName].__installed = true;
-}
-
-export class InitScript {
-  readonly guid: string;
-  readonly source: string;
-  readonly evalSource?: string;
-  readonly needsBinding: boolean;
-
-  constructor(source: string, needsBinding: boolean) {
-    this.guid = createGuid();
-    this.needsBinding = needsBinding;
-    if (needsBinding) {
-      this.evalSource = `
-      `;
-      this.source = `(() => {
-        globalThis.__pwInitScripts = globalThis.__pwInitScripts || {};
-        const hasInitScript = globalThis.__pwInitScripts[${JSON.stringify(this.guid)}];
-        if (hasInitScript)
-          return;
-        globalThis.__pwInitScripts[${JSON.stringify(this.guid)}] = true;
-        ${source}
-      })();`;
-    } else {
-      this.source = `(() => {
-        globalThis.__pwInitScripts = globalThis.__pwInitScripts || {};
-        const hasInitScript = globalThis.__pwInitScripts[${JSON.stringify(this.guid)}];
-        if (hasInitScript)
-          return;
-        globalThis.__pwInitScripts[${JSON.stringify(this.guid)}] = true;
-        ${source}
-      })();`;
-    }
   }
 }
 

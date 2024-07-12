@@ -25,8 +25,8 @@ import { parseResult, serializeArgument } from './jsHandle';
 import type { Page } from './page';
 import type { BrowserContext } from './browserContext';
 
-export class BindingChannel extends ChannelOwner<channels.BindingChannelChannel> {
-  static from(channel: channels.BindingChannelChannel): BindingChannel {
+export class InitScriptChannel extends ChannelOwner<channels.InitScriptChannelChannel> {
+  static from(channel: channels.InitScriptChannelChannel): InitScriptChannel {
     return (channel as any)._object;
   }
 
@@ -35,7 +35,7 @@ export class BindingChannel extends ChannelOwner<channels.BindingChannelChannel>
   private _proxyObject: any;
   private _realObjectPromise = new ManualPromise<any>();
 
-  constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.BindingChannelInitializer) {
+  constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.InitScriptChannelInitializer) {
     super(parent, type, guid, initializer);
 
     const source = (new EventEmitter()) as any;
@@ -69,6 +69,8 @@ export class BindingChannel extends ChannelOwner<channels.BindingChannelChannel>
       if (this._disconnected)
         return;
       try {
+        if (typeof realObject[params.method] !== 'function')
+          throw new Error(`Method "${params.method}" is not exposed to the page`);
         const result = await realObject[params.method](...params.args.map(arg => parseResult(arg)));
         this._channel.respond({ callId: params.callId, result: serializeArgument(result) }).catch(() => {});
       } catch (error) {
@@ -81,7 +83,7 @@ export class BindingChannel extends ChannelOwner<channels.BindingChannelChannel>
     const promise = (async () => func(this._proxyObject, this._source))();
     promise.then(object => {
       this._realObjectPromise.resolve(object);
-      this._channel.connected().catch(() => {});
+      this._channel.connected({}).catch(() => {});
     }, error => {
       this._channel.connected({ error: serializeError(error) }).catch(() => {});
     });
@@ -90,11 +92,15 @@ export class BindingChannel extends ChannelOwner<channels.BindingChannelChannel>
 
 export async function exposeBindingImpl(target: Page | BrowserContext, name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean }) {
   if (options.handle) {
-    await target.addInitScript(`connect => {
+    await target._addInitScriptImpl(`connect => {
       const bindingPromise = connect({});
       let lastCallId = 0;
       const handles = new Map();
-      window["${name}"] = async (...args) => bindingPromise.then(async binding => {
+      globalThis["${name}"] = async (...args) => bindingPromise.then(async binding => {
+        while (args.length && args[args.length - 1] === undefined)
+          args.pop();
+        if (args.length > 1)
+          throw new Error('exposeBindingHandle supports a single argument, ' + args.length + ' received');
         const callId = ++lastCallId;
         handles.set(callId, args[0]);
         try {
@@ -103,24 +109,20 @@ export async function exposeBindingImpl(target: Page | BrowserContext, name: str
           handles.delete(callId);
         }
       });
-      window["${name}"].__handles = handles;
+      globalThis["${name}"].__handles = handles;
     }`, async (_: object, source: structs.InitScriptSource) => ({
       invoke: async (callId: number, ...args: any[]) => {
         const handle = await source.frame.evaluateHandle(`window["${name}"].__handles.get(${callId})`);
-        try {
-          return await callback(source, handle);
-        } finally {
-          handle?.dispose();
-        }
+        return await callback(source, handle);
       },
-    }));
+    }), true /* immediately */);
     return;
   }
 
-  await target.addInitScript(`connect => {
+  await target._addInitScriptImpl(`connect => {
     const bindingPromise = connect({});
-    window["${name}"] = async (...args) => bindingPromise.then(binding => binding.invoke(...args));
+    globalThis["${name}"] = async (...args) => bindingPromise.then(binding => binding.invoke(...args));
   }`, async (_: object, source: structs.InitScriptSource) => ({
     invoke: async (...args: any[]) => callback(source, ...args),
-  }));
+  }), true /* immediately */);
 }
