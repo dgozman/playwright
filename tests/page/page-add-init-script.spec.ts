@@ -123,23 +123,24 @@ it('should work with function notation', async ({ page, server }) => {
   }
 
   const logs: string[] = [];
-  const push = logs.push.bind(logs);
-  logs.push = (...items: string[]) => {
-    console.log(...items);
-    return push(...items);
-  };
-  page.on('console', message => logs.push(message.text()));
+  page.on('console', message => {
+    if (message.text().startsWith('page:'))
+      logs.push(message.text());
+  });
 
+  let onConnectThrow = '';
   const onConnect = async (exposedToTheTest: ExposedToTheTest, source: InitScriptSource) => {
     logs.push(`connected from ${source.frame.url()}`);
+    if (onConnectThrow)
+      throw new Error(onConnectThrow);
 
     const exposedToThePage: ExposedToThePage = {
       add: async (a, b) => a + b,
       multiply: async (a, b) => a * b,
     };
 
-    logs.push(`subtract(1, 2) => ${await exposedToTheTest.subtract(1, 2)}`);
-    logs.push(`divide(4, 2) => ${await exposedToTheTest.divide(4, 2)}`);
+    logs.push(`test: subtract(1, 2) => ${await exposedToTheTest.subtract(1, 2).catch(e => e.message)}`);
+    logs.push(`test: divide(4, 2) => ${await exposedToTheTest.divide(4, 2).catch(e => e.message)}`);
     return exposedToThePage;
   };
 
@@ -149,19 +150,46 @@ it('should work with function notation', async ({ page, server }) => {
       divide: async (a, b) => a / b,
     };
 
+    (window as any).connect = connect;
+
     const exposedToThePage = await connect(exposedToTheTest);
-    console.log(`add(1, 2) => ${await exposedToThePage.add(1, 2)}`);
-    console.log(`multiply(2, 2) => ${await exposedToThePage.multiply(2, 2)}`);
+    console.log(`page: add(1, 2) => ${await exposedToThePage.add(1, 2)}`);
+    console.log(`page: multiply(2, 2) => ${await exposedToThePage.multiply(2, 2)}`);
   }, onConnect);
 
   await page.goto(server.EMPTY_PAGE);
-  await expect.poll(() => logs.length).toEqual(5);
-  expect(logs.sort()).toEqual([
-    'add(1, 2) => 3',
+  await expect.poll(() => logs.sort()).toEqual([
     `connected from ${server.EMPTY_PAGE}`,
-    'divide(4, 2) => 2',
-    'multiply(2, 2) => 4',
-    'subtract(1, 2) => -1',
+    'page: add(1, 2) => 3',
+    'page: multiply(2, 2) => 4',
+    'test: divide(4, 2) => 2',
+    'test: subtract(1, 2) => -1',
+  ]);
+
+  // Connect one more time, with some errors.
+  logs.length = 0;
+  await page.evaluate(async () => {
+    const obj = await (window as any).connect({ subtract: (a, b) => a - b});
+    console.log(`page: add(1, 2) => ${await obj.add(1, 2)}`);
+    console.log(`page: foo(1, 2) => ${await obj.foo(1, 2).catch(e => e.message)}`);
+  });
+  await expect.poll(() => logs.sort()).toEqual([
+    `connected from ${server.EMPTY_PAGE}`,
+    'page: add(1, 2) => 3',
+    'page: foo(1, 2) => Method "foo" is not exposed to the page',
+    'test: divide(4, 2) => Method "divide" is not exposed from the page',
+    'test: subtract(1, 2) => -1',
+  ]);
+
+  // Now fail to connect.
+  onConnectThrow = 'Oh my';
+  logs.length = 0;
+  await page.evaluate(async () => {
+    console.log(`connect => ${await (window as any).connect().catch(e => e.message)}`);
+  });
+  await expect.poll(() => logs.sort()).toEqual([
+    'connect => Oh my',
+    `connected from ${server.EMPTY_PAGE}`,
   ]);
 });
 
@@ -176,11 +204,55 @@ it('should work with simple function notation', async ({ page, server }) => {
 
   await page.addInitScript(async connect => {
     const exposed = await connect();
-    console.log('add(1, 2) => ' + await exposed.add(1, 2));
+    console.log('page: add(1, 2) => ' + await exposed.add(1, 2));
   }, onConnect);
 
-  const promise = page.waitForEvent('console');
+  const logs = [];
+  page.on('console', message => {
+    if (message.text().startsWith('page:'))
+      logs.push(message.text());
+  });
+
   await page.goto(server.EMPTY_PAGE);
-  const message = await promise;
-  expect(message.text()).toBe('add(1, 2) => 3');
+  await expect.poll(() => logs).toEqual(['page: add(1, 2) => 3']);
+});
+
+it('should work with multiple channels', async ({ page, server }) => {
+  const onConnectAdd = async () => ({
+    add: (a, b) => a + b,
+  });
+  const onConnectMul = async () => ({
+    mul: (a, b) => a * b,
+  });
+  const onConnectSub = async () => ({
+    sub: (a, b) => a - b,
+  });
+
+  const logs = [];
+  page.on('console', message => {
+    if (message.text().startsWith('page:'))
+      logs.push(message.text());
+  });
+
+  await page.addInitScript(async connect => {
+    const exposed = await connect();
+    console.log('page: add(1, 2) => ' + await exposed.add(1, 2));
+  }, onConnectAdd);
+
+  await page.context().addInitScript(async connect => {
+    const exposed = await connect();
+    console.log('page: mul(1, 2) => ' + await exposed.mul(1, 2));
+  }, onConnectMul);
+
+  await page.addInitScript(async connect => {
+    const exposed = await connect();
+    console.log('page: sub(1, 2) => ' + await exposed.sub(1, 2));
+  }, onConnectSub);
+
+  await page.goto(server.EMPTY_PAGE);
+  await expect.poll(() => logs.sort()).toEqual([
+    'page: add(1, 2) => 3',
+    'page: mul(1, 2) => 2',
+    'page: sub(1, 2) => -1',
+  ]);
 });

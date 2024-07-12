@@ -386,7 +386,8 @@ class InitScriptChannelDispatcher extends Dispatcher<{ guid: string }, channels.
     initScriptChannel.oncall = (method, args, callId) => {
       const promise = new ManualPromise<any>();
       this._calls.set(callId, promise);
-      this._dispatchEvent('call', { callId, method, args: args.map(arg => serializeResult(arg)) });
+      if (!this._disposed)
+        this._dispatchEvent('call', { callId, method, args: args.map(arg => serializeResult(arg)) });
       return promise;
     };
     initScriptChannel.ondisconnect = () => {

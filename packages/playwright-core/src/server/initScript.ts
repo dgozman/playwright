@@ -64,7 +64,22 @@ export class InitScript {
 
   static async dispatchBinding(page: Page, payloadString: string, context: FrameExecutionContext) {
     const payload = JSON.parse(payloadString) as BindingPayload;
+
+    // Each init script has a unique scriptId and will initialize across many contexts.
     const scriptId = payload.scriptId;
+    // Assign a unique contextId to each execution context.
+    let contextId = (context as any)[kContextIdSymbol];
+    if (!contextId) {
+      contextId = createGuid();
+      (context as any)[kContextIdSymbol] = contextId;
+    }
+    // Inside each execution context, each init script can create a channel multiple times.
+    // Channel has a sequential id. We differentiate channels from the same
+    // init script by uniqueId = contextId:channelId.
+    const uniqueId = contextId + ':' + payload.channelId;
+    // Inside each execution context, channel is identified by its owner scriptId and channelId.
+    // This compound dispatchId allows for a single map instead of nested maps.
+    const dispatchId = scriptId + ':' + payload.channelId;
 
     let initScript = page.initScripts.get(scriptId);
     if (!initScript)
@@ -73,17 +88,24 @@ export class InitScript {
       return;
 
     if ('connect' in payload) {
-      const channelId = createGuid();
       const channel: InitScriptChannel = {
         frame: context.frame,
         scriptId,
         oncall: undefined,
         ondisconnect: undefined,
         call: async (method, args) => {
-          return await context.evaluate(performCall, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, method, args });
+          const result = await context.evaluate(performCall, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId, method, args });
+          if ('error' in result)
+            throw result.error;
+          if ('message' in result && 'stack' in result) {
+            const error = new Error(result.message);
+            error.stack = result.stack;
+            throw error;
+          }
+          return result.result;
         },
       };
-      initScript._channels.set(channelId, channel);
+      initScript._channels.set(uniqueId, channel);
 
       // TODO: perhaps introduce ExecutionContextDestroyed event instead?
       let disconnected = false;
@@ -102,85 +124,95 @@ export class InitScript {
 
       try {
         await initScript._channelCallback(channel);
-        context.evaluate(deliverConnect, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, channelId }).catch(e => debugLogger.log('error', e));
+        context.evaluate(deliverConnect, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId }).catch(e => debugLogger.log('error', e));
       } catch (error) {
-        initScript._channels.delete(channelId);
+        initScript._channels.delete(uniqueId);
         if (isError(error))
-          context.evaluate(deliverConnectError, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, channelId, message: error.message, stack: error.stack }).catch(e => debugLogger.log('error', e));
+          context.evaluate(deliverConnectError, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId, message: error.message, stack: error.stack }).catch(e => debugLogger.log('error', e));
         else
-          context.evaluate(deliverConnectErrorValue, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, channelId, error }).catch(e => debugLogger.log('error', e));
+          context.evaluate(deliverConnectErrorValue, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId, error }).catch(e => debugLogger.log('error', e));
       }
       return;
     }
 
-    const channel = initScript._channels.get(payload.channelId);
+    const channel = initScript._channels.get(uniqueId);
     if (channel?.oncall) {
       const callId = payload.callId;
       try {
         const args = payload.args.map(a => parseEvaluationResultValue(a));
         const result = await channel.oncall(payload.method, args, callId);
-        context.evaluate(deliverCallResult, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, callId, result }).catch(e => debugLogger.log('error', e));
+        context.evaluate(deliverCallResult, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId, callId, result }).catch(e => debugLogger.log('error', e));
       } catch (error) {
         if (isError(error))
-          context.evaluate(deliverCallError, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, callId, message: error.message, stack: error.stack }).catch(e => debugLogger.log('error', e));
+          context.evaluate(deliverCallError, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId, callId, message: error.message, stack: error.stack }).catch(e => debugLogger.log('error', e));
         else
-          context.evaluate(deliverCallErrorValue, { bindingName: PLAYWRIGHT_BINDING_NAME, scriptId, callId, error }).catch(e => debugLogger.log('error', e));
+          context.evaluate(deliverCallErrorValue, { bindingName: PLAYWRIGHT_BINDING_NAME, dispatchId, callId, error }).catch(e => debugLogger.log('error', e));
       }
     }
 
-    function deliverConnect(arg: { bindingName: string, scriptId: string, channelId: string }) {
-      const payload: BindingEvalPayload = { channelId: arg.channelId };
-      (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+    function deliverConnect(arg: { bindingName: string, dispatchId: string }) {
+      const payload: BindingEvalPayload = { connected: true };
+      (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
     }
 
-    function deliverConnectError(arg: { bindingName: string, scriptId: string, channelId: string, message: string, stack: string | undefined }) {
+    function deliverConnectError(arg: { bindingName: string, dispatchId: string, message: string, stack: string | undefined }) {
       const error = new Error(arg.message);
       error.stack = arg.stack;
-      const payload: BindingEvalPayload = { channelId: arg.channelId, error };
-      (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+      const payload: BindingEvalPayload = { connected: true, error };
+      (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
     }
 
-    function deliverConnectErrorValue(arg: { bindingName: string, scriptId: string, channelId: string, error: any }) {
-      const payload: BindingEvalPayload = { channelId: arg.channelId, error: arg.error };
-      (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+    function deliverConnectErrorValue(arg: { bindingName: string, dispatchId: string, error: any }) {
+      const payload: BindingEvalPayload = { connected: true, error: arg.error };
+      (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
     }
 
-    function deliverCallResult(arg: { bindingName: string, scriptId: string, callId: number, result: any }) {
+    function deliverCallResult(arg: { bindingName: string, dispatchId: string, callId: number, result: any }) {
       const payload: BindingEvalPayload = { callId: arg.callId, result: arg.result };
-      (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+      (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
     }
 
-    function deliverCallError(arg: { bindingName: string, scriptId: string, callId: number, message: string, stack: string | undefined }) {
+    function deliverCallError(arg: { bindingName: string, dispatchId: string, callId: number, message: string, stack: string | undefined }) {
       const error = new Error(arg.message);
       error.stack = arg.stack;
       const payload: BindingEvalPayload = { callId: arg.callId, error };
-      (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+      (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
     }
 
-    function deliverCallErrorValue(arg: { bindingName: string, scriptId: string, callId: number, error: any }) {
+    function deliverCallErrorValue(arg: { bindingName: string, dispatchId: string, callId: number, error: any }) {
       const payload: BindingEvalPayload = { callId: arg.callId, error: arg.error };
-      (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+      (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
     }
 
-    async function performCall(arg: { bindingName: string, scriptId: string, method: string, args: any[] }) {
+    async function performCall(arg: { bindingName: string, dispatchId: string, method: string, args: any[] }) {
       const payload: BindingEvalPayload = { method: arg.method, args: arg.args };
-      return await (globalThis as any)[arg.bindingName].__dispatchers.get(arg.scriptId)(payload);
+      try {
+        const result = await (globalThis as any)[arg.bindingName].__dispatch.get(arg.dispatchId)(payload);
+        return { result };
+      } catch (error) {
+        if (error instanceof Error)
+          return { message: error.message, stack: error.stack };
+        return { error };
+      }
     }
   }
 }
 
+const kContextIdSymbol = Symbol('contextId');
+
 type BindingPayload = {
   scriptId: string;
+  channelId: number;
   connect: true;
 } | {
   scriptId: string;
-  channelId: string;
+  channelId: number;
   method: string;
   callId: number;
   args: SerializedValue[];
 };
 type BindingEvalPayload = {
-  channelId: string;
+  connected: true;
   error?: any;
 } | {
   callId: number;
@@ -193,84 +225,81 @@ type BindingEvalPayload = {
 
 function connectScriptChannel(bindingName: string, scriptId: string, connectCallback: (connect: (exposedObject: object) => Promise<object>) => any, utilityScriptSerializers: ReturnType<typeof utilityScriptSerializersSource>) {
   const binding = (globalThis as any)[bindingName];
-  let channelId = '';
+  let lastChannelId = 0;
 
-  let exposedObjectCallback = (o: object) => {};
-  const exposedObjectPromise = new Promise<object>(resolve => exposedObjectCallback = resolve);
+  const connect = async (exposedObject: object) => {
+    const channelId = ++lastChannelId;
+    let lastCallId = 0;
+    const calls = new Map<number, { resolve: (value: any) => void, reject: (error: any) => void }>();
 
-  let lastCallId = 0;
-  const calls = new Map<number, { resolve: (value: any) => void, reject: (error: any) => void }>();
+    const proxyObject = new Proxy({}, {
+      get: (obj: any, prop: string | symbol) => {
+        if (typeof prop !== 'string' || Reflect.has(obj, prop) || prop === 'then')
+          return Reflect.get(obj, prop);
+        return async (...args: any[]) => {
+          const callId = ++lastCallId;
+          const promise = new Promise<any>((resolve, reject) => calls.set(callId, { resolve, reject }));
 
-  const proxyObject = new Proxy({}, {
-    get: (obj: any, prop: string | symbol) => {
-      if (typeof prop !== 'string' || Reflect.has(obj, prop) || prop === 'then')
-        return Reflect.get(obj, prop);
-      return async (...args: any[]) => {
-        const callId = ++lastCallId;
-        const promise = new Promise<any>((resolve, reject) => calls.set(callId, { resolve, reject }));
+          const serializedArgs = [];
+          for (let i = 0; i < args.length; i++) {
+            serializedArgs[i] = utilityScriptSerializers.serializeAsCallArgument(args[i], v => {
+              return { fallThrough: v };
+            });
+          }
 
-        const serializedArgs = [];
-        for (let i = 0; i < args.length; i++) {
-          serializedArgs[i] = utilityScriptSerializers.serializeAsCallArgument(args[i], v => {
-            return { fallThrough: v };
-          });
-        }
-
-        const payload: BindingPayload = {
-          scriptId,
-          channelId,
-          method: prop,
-          callId,
-          args: serializedArgs,
+          const payload: BindingPayload = {
+            scriptId,
+            channelId,
+            method: prop,
+            callId,
+            args: serializedArgs,
+          };
+          binding(JSON.stringify(payload));
+          return promise;
         };
-        binding(JSON.stringify(payload));
-        return promise;
-      };
-    },
-  });
+      },
+    });
 
-  let connectedResolve = () => {};
-  let connectedReject = (error: any) => {};
-  const connectedPromise = new Promise<void>((resolve, reject) => {
-    connectedResolve = resolve;
-    connectedReject = reject;
-  });
+    let connectedResolve = () => {};
+    let connectedReject = (error: any) => {};
+    const connectedPromise = new Promise<void>((resolve, reject) => {
+      connectedResolve = resolve;
+      connectedReject = reject;
+    });
 
-  binding.__dispatchers = binding.__dispatchers || new Map();
-  binding.__dispatchers.set(scriptId, async (payload: BindingEvalPayload) => {
-    if ('channelId' in payload) {
-      channelId = payload.channelId;
-      if ('error' in payload)
-        connectedReject(payload.error);
-      else
-        connectedResolve();
-      return;
-    }
-
-    if ('callId' in payload) {
-      const call = calls.get(payload.callId);
-      calls.delete(payload.callId);
-      if (call) {
+    binding.__dispatch = binding.__dispatch || new Map();
+    const dispatchId = scriptId + ':' + channelId;
+    binding.__dispatch.set(dispatchId, async (payload: BindingEvalPayload) => {
+      if ('connected' in payload) {
         if ('error' in payload)
-          call.reject(payload.error);
+          connectedReject(payload.error);
         else
-          call.resolve(payload.result);
+          connectedResolve();
+        return;
       }
-      return;
-    }
 
-    const exposedObject = await exposedObjectPromise;
-    if (typeof (exposedObject as any)[payload.method] !== 'function')
-      throw new Error(`Method "${payload.method}" is not exposed from the page`);
-    return (exposedObject as any)[payload.method](...payload.args);
-  });
+      if ('callId' in payload) {
+        const call = calls.get(payload.callId);
+        calls.delete(payload.callId);
+        if (call) {
+          if ('error' in payload)
+            call.reject(payload.error);
+          else
+            call.resolve(payload.result);
+        }
+        return;
+      }
 
-  const payload: BindingPayload = { scriptId, connect: true };
-  binding(JSON.stringify(payload));
+      if (typeof (exposedObject as any)[payload.method] !== 'function')
+        throw new Error(`Method "${payload.method}" is not exposed from the page`);
+      return (exposedObject as any)[payload.method](...payload.args);
+    });
 
-  connectCallback(async exposedObject => {
-    exposedObjectCallback(exposedObject);
+    const payload: BindingPayload = { scriptId, channelId, connect: true };
+    binding(JSON.stringify(payload));
     await connectedPromise;
     return proxyObject;
-  });
+  };
+
+  connectCallback(connect);
 }
