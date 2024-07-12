@@ -90,9 +90,9 @@ export class InitScriptChannel extends ChannelOwner<channels.InitScriptChannelCh
   }
 }
 
-export async function exposeBindingImpl(target: Page | BrowserContext, name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean }) {
+export async function exposeBindingImpl(context: BrowserContext, name: string, callback: (source: structs.BindingSource, ...args: any[]) => any, options: { handle?: boolean }, page?: Page) {
   if (options.handle) {
-    await target._addInitScriptImpl(`connect => {
+    await context._addInitScriptImpl(`connect => {
       const bindingPromise = connect({});
       let lastCallId = 0;
       const handles = new Map();
@@ -115,14 +115,14 @@ export async function exposeBindingImpl(target: Page | BrowserContext, name: str
         const handle = await source.frame.evaluateHandle(`window["${name}"].__handles.get(${callId})`);
         return await callback(source, handle);
       },
-    }), true /* immediately */);
+    }), true /* immediately */, page);
     return;
   }
 
-  await target._addInitScriptImpl(`connect => {
+  await context._addInitScriptImpl(`connect => {
     const bindingPromise = connect({});
     globalThis["${name}"] = async (...args) => bindingPromise.then(binding => binding.invoke(...args));
   }`, async (_: object, source: structs.InitScriptSource) => ({
     invoke: async (...args: any[]) => callback(source, ...args),
-  }), true /* immediately */);
+  }), true /* immediately */, page);
 }

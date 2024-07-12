@@ -225,7 +225,10 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   _onInitScriptChannelConnect(initScriptChannel: InitScriptChannel) {
-    const func = this._idToInitScriptCallback.get(initScriptChannel._initializer.scriptId);
+    const scriptId = initScriptChannel._initializer.scriptId;
+    let func = this._idToInitScriptCallback.get(scriptId);
+    for (const page of this._pages)
+      func = func ?? page._idToInitScriptCallback.get(scriptId);
     if (func)
       initScriptChannel.connect(func);
   }
@@ -313,10 +316,10 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     await this._addInitScriptImpl(script, arg, false);
   }
 
-  async _addInitScriptImpl(script: Function | string | { path?: string, content?: string }, arg: any, immediately: boolean): Promise<void> {
+  async _addInitScriptImpl(script: Function | string | { path?: string, content?: string }, arg: any, immediately: boolean, page?: Page): Promise<void> {
     if (typeof arg === 'function') {
       const source = await evaluationScript(script, undefined, true, true);
-      const { scriptId } = await this._channel.addInitScript({ source, needsChannel: true });
+      const { scriptId } = await this._channel.addInitScript({ source, needsChannel: true, page: page?._channel });
       this._idToInitScriptCallback.set(scriptId, arg);
       if (immediately)
         await this._channel.evalulateInitScript({ scriptId });

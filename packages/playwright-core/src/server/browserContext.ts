@@ -389,9 +389,19 @@ export abstract class BrowserContext extends SdkObject {
 
   async evaluateInitScriptImmediately(scriptId: string) {
     const script = this.initScripts.get(scriptId);
+    if (script) {
+      await this.safeNonStallingEvaluateInAllFrames(script.source, 'main');
+      return;
+    }
+    for (const page of this.pages()) {
+      const script = page.initScripts.get(scriptId);
+      if (script) {
+        await page.safeNonStallingEvaluateInAllFrames(script.source, 'main');
+        return;
+      }
+    }
     if (!script)
       throw new Error('Init script with given id was not found');
-    await this.safeNonStallingEvaluateInAllFrames(script.source, 'main');
   }
 
   async _removeInitScripts(): Promise<void> {

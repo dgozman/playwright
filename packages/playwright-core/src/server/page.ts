@@ -514,13 +514,6 @@ export class Page extends SdkObject {
     return initScript;
   }
 
-  async evaluateInitScriptImmediately(scriptId: string) {
-    const script = this.initScripts.get(scriptId);
-    if (!script)
-      throw new Error('Init script with given id was not found');
-    await this.safeNonStallingEvaluateInAllFrames(script.source, 'main');
-  }
-
   async _removeInitScripts() {
     this.initScripts.clear();
     await this._delegate.removeInitScripts();

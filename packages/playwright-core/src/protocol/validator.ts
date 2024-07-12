@@ -835,6 +835,7 @@ scheme.BrowserContextAddCookiesResult = tOptional(tObject({}));
 scheme.BrowserContextAddInitScriptParams = tObject({
   source: tString,
   needsChannel: tOptional(tBoolean),
+  page: tOptional(tChannel(['Page'])),
 });
 scheme.BrowserContextAddInitScriptResult = tObject({
   scriptId: tString,
@@ -1014,9 +1015,6 @@ scheme.PageInitializer = tObject({
   isClosed: tBoolean,
   opener: tOptional(tChannel(['Page'])),
 });
-scheme.PageInitScriptConnectEvent = tObject({
-  initScriptChannel: tChannel(['InitScriptChannel']),
-});
 scheme.PageCloseEvent = tOptional(tObject({}));
 scheme.PageCrashEvent = tOptional(tObject({}));
 scheme.PageDownloadEvent = tObject({
@@ -1057,17 +1055,6 @@ scheme.PageSetDefaultTimeoutNoReplyParams = tObject({
   timeout: tOptional(tNumber),
 });
 scheme.PageSetDefaultTimeoutNoReplyResult = tOptional(tObject({}));
-scheme.PageAddInitScriptParams = tObject({
-  source: tString,
-  needsChannel: tOptional(tBoolean),
-});
-scheme.PageAddInitScriptResult = tObject({
-  scriptId: tString,
-});
-scheme.PageEvalulateInitScriptParams = tObject({
-  scriptId: tString,
-});
-scheme.PageEvalulateInitScriptResult = tOptional(tObject({}));
 scheme.PageCloseParams = tObject({
   runBeforeUnload: tOptional(tBoolean),
   reason: tOptional(tString),

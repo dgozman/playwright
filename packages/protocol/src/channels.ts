@@ -1544,9 +1544,11 @@ export type BrowserContextAddCookiesResult = void;
 export type BrowserContextAddInitScriptParams = {
   source: string,
   needsChannel?: boolean,
+  page?: PageChannel,
 };
 export type BrowserContextAddInitScriptOptions = {
   needsChannel?: boolean,
+  page?: PageChannel,
 };
 export type BrowserContextAddInitScriptResult = {
   scriptId: string,
@@ -1856,7 +1858,6 @@ export type PageInitializer = {
   opener?: PageChannel,
 };
 export interface PageEventTarget {
-  on(event: 'initScriptConnect', callback: (params: PageInitScriptConnectEvent) => void): this;
   on(event: 'close', callback: (params: PageCloseEvent) => void): this;
   on(event: 'crash', callback: (params: PageCrashEvent) => void): this;
   on(event: 'download', callback: (params: PageDownloadEvent) => void): this;
@@ -1873,8 +1874,6 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   _type_Page: boolean;
   setDefaultNavigationTimeoutNoReply(params: PageSetDefaultNavigationTimeoutNoReplyParams, metadata?: CallMetadata): Promise<PageSetDefaultNavigationTimeoutNoReplyResult>;
   setDefaultTimeoutNoReply(params: PageSetDefaultTimeoutNoReplyParams, metadata?: CallMetadata): Promise<PageSetDefaultTimeoutNoReplyResult>;
-  addInitScript(params: PageAddInitScriptParams, metadata?: CallMetadata): Promise<PageAddInitScriptResult>;
-  evalulateInitScript(params: PageEvalulateInitScriptParams, metadata?: CallMetadata): Promise<PageEvalulateInitScriptResult>;
   close(params: PageCloseParams, metadata?: CallMetadata): Promise<PageCloseResult>;
   emulateMedia(params: PageEmulateMediaParams, metadata?: CallMetadata): Promise<PageEmulateMediaResult>;
   goBack(params: PageGoBackParams, metadata?: CallMetadata): Promise<PageGoBackResult>;
@@ -1909,9 +1908,6 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   bringToFront(params?: PageBringToFrontParams, metadata?: CallMetadata): Promise<PageBringToFrontResult>;
   updateSubscription(params: PageUpdateSubscriptionParams, metadata?: CallMetadata): Promise<PageUpdateSubscriptionResult>;
 }
-export type PageInitScriptConnectEvent = {
-  initScriptChannel: InitScriptChannelChannel,
-};
 export type PageCloseEvent = {};
 export type PageCrashEvent = {};
 export type PageDownloadEvent = {
@@ -1958,23 +1954,6 @@ export type PageSetDefaultTimeoutNoReplyOptions = {
   timeout?: number,
 };
 export type PageSetDefaultTimeoutNoReplyResult = void;
-export type PageAddInitScriptParams = {
-  source: string,
-  needsChannel?: boolean,
-};
-export type PageAddInitScriptOptions = {
-  needsChannel?: boolean,
-};
-export type PageAddInitScriptResult = {
-  scriptId: string,
-};
-export type PageEvalulateInitScriptParams = {
-  scriptId: string,
-};
-export type PageEvalulateInitScriptOptions = {
-
-};
-export type PageEvalulateInitScriptResult = void;
 export type PageCloseParams = {
   runBeforeUnload?: boolean,
   reason?: string,
@@ -2396,7 +2375,6 @@ export type PageUpdateSubscriptionOptions = {
 export type PageUpdateSubscriptionResult = void;
 
 export interface PageEvents {
-  'initScriptConnect': PageInitScriptConnectEvent;
   'close': PageCloseEvent;
   'crash': PageCrashEvent;
   'download': PageDownloadEvent;
