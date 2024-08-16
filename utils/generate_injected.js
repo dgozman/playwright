@@ -23,7 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const esbuild = require('esbuild');
 
 /**
- * @type {[string, string, string, boolean][]}
+ * @type {[string, string, string, boolean, boolean?][]}
  */
 const injectedScripts = [
   [
@@ -54,6 +54,13 @@ const injectedScripts = [
     path.join(ROOT, 'packages', 'playwright-core', 'src', 'server', 'injected', 'clock.ts'),
     path.join(ROOT, 'packages', 'playwright-core', 'lib', 'server', 'injected', 'packed'),
     path.join(ROOT, 'packages', 'playwright-core', 'src', 'generated'),
+    true,
+  ],
+  [
+    path.join(ROOT, 'packages', 'playwright-core', 'src', 'server', 'injected', 'webSocketMock.ts'),
+    path.join(ROOT, 'packages', 'playwright-core', 'lib', 'server', 'injected', 'packed'),
+    path.join(ROOT, 'packages', 'playwright-core', 'lib', 'generated'), // put directly to lib
+    true,
     true,
   ],
   [
@@ -114,7 +121,7 @@ const inlineCSSPlugin = {
 };
 
 (async () => {
-  for (const [injected, outdir, generatedFolder, hasExports] of injectedScripts) {
+  for (const [injected, outdir, generatedFolder, hasExports, raw] of injectedScripts) {
     await fs.promises.mkdir(generatedFolder, { recursive: true });
     const buildOutput = await esbuild.build({
       entryPoints: [injected],
@@ -130,9 +137,13 @@ const inlineCSSPlugin = {
     const baseName = path.basename(injected);
     const outFileJs = path.join(outdir, baseName.replace('.ts', '.js'));
     let content = await fs.promises.readFile(outFileJs, 'utf-8');
-    if (hasExports)
-      content = await replaceEsbuildHeader(content, outFileJs);
-    const newContent = `export const source = ${JSON.stringify(content)};`;
-    await fs.promises.writeFile(path.join(generatedFolder, baseName.replace('.ts', 'Source.ts')), newContent);
+    if (raw) {
+      await fs.promises.writeFile(path.join(generatedFolder, baseName.replace('.ts', '.js')), content);
+    } else {
+      if (hasExports)
+        content = await replaceEsbuildHeader(content, outFileJs);
+      const newContent = `export const source = ${JSON.stringify(content)};`;
+      await fs.promises.writeFile(path.join(generatedFolder, baseName.replace('.ts', 'Source.ts')), newContent);
+    }
   }
 })();

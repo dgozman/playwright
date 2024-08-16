@@ -3,7 +3,7 @@
         "allowJs": true,
         "checkJs": false,
         "noEmit": true,
-        "moduleResolution": "node",
+        "moduleResolution": "Bundler",
         "target": "ESNext",
         "strictNullChecks": false,
         "strictBindCallApply": true,

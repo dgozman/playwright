@@ -35,7 +35,11 @@
     "./lib/utilsBundle": "./lib/utilsBundle.js",
     "./lib/zipBundle": "./lib/zipBundle.js",
     "./types/protocol": "./types/protocol.d.ts",
-    "./types/structs": "./types/structs.d.ts"
+    "./types/structs": "./types/structs.d.ts",
+    "./mocks/websocket": {
+      "types": "./types/websocket.d.ts",
+      "default": "./lib/generated/webSocketMock.js"
+    }
   },
   "bin": {
     "playwright-core": "cli.js"
