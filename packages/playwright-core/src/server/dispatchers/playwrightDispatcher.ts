@@ -25,6 +25,7 @@ import { ElectronDispatcher } from './electronDispatcher';
 import { LocalUtilsDispatcher } from './localUtilsDispatcher';
 import { APIRequestContextDispatcher } from './networkDispatchers';
 import { SelectorsDispatcher } from './selectorsDispatcher';
+import { TracingDispatcher } from './tracingDispatcher';
 import { createGuid } from '../../utils';
 import { eventsHelper  } from '../../utils/eventsHelper';
 
@@ -64,7 +65,9 @@ export class PlaywrightDispatcher extends Dispatcher<Playwright, channels.Playwr
 
   async newRequest(params: channels.PlaywrightNewRequestParams): Promise<channels.PlaywrightNewRequestResult> {
     const request = new GlobalAPIRequestContext(this._object, params);
-    return { request: APIRequestContextDispatcher.from(this.parentScope(), request) };
+    // Note that tracing can outlive the parent context, thus "parentScope".
+    const tracing = TracingDispatcher.from(this.parentScope(), request.tracing());
+    return { request: new APIRequestContextDispatcher(this.parentScope(), request, tracing) };
   }
 
   async cleanup() {

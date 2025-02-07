@@ -176,24 +176,10 @@ export class WebSocketDispatcher extends Dispatcher<WebSocket, channels.WebSocke
 export class APIRequestContextDispatcher extends Dispatcher<APIRequestContext, channels.APIRequestContextChannel, RootDispatcher | BrowserContextDispatcher> implements channels.APIRequestContextChannel {
   _type_APIRequestContext = true;
 
-  static from(scope: RootDispatcher | BrowserContextDispatcher, request: APIRequestContext): APIRequestContextDispatcher {
-    const result = existingDispatcher<APIRequestContextDispatcher>(request);
-    return result || new APIRequestContextDispatcher(scope, request);
-  }
-
-  static fromNullable(scope: RootDispatcher | BrowserContextDispatcher, request: APIRequestContext | null): APIRequestContextDispatcher | undefined {
-    return request ? APIRequestContextDispatcher.from(scope, request) : undefined;
-  }
-
-  private constructor(parentScope: RootDispatcher | BrowserContextDispatcher, request: APIRequestContext) {
-    // We will reparent these to the context below.
-    const tracing = TracingDispatcher.from(parentScope as any as APIRequestContextDispatcher, request.tracing());
-
+  constructor(parentScope: RootDispatcher | BrowserContextDispatcher, request: APIRequestContext, tracing: TracingDispatcher) {
     super(parentScope, request, 'APIRequestContext', {
       tracing,
     });
-
-    this.adopt(tracing);
   }
 
   async storageState(params: channels.APIRequestContextStorageStateParams): Promise<channels.APIRequestContextStorageStateResult> {

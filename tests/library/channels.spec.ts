@@ -81,8 +81,8 @@ it('should scope context handles', async ({ browserType, server, expectScopeStat
               ] },
             ] },
             { _guid: 'request-context', objects: [] },
-            { _guid: 'tracing', objects: [] }
           ] },
+          { _guid: 'tracing', objects: [] },
         ] },
       ] },
       { _guid: 'electron', objects: [] },
@@ -180,8 +180,8 @@ it('should scope browser handles', async ({ browserType, expectScopeState }) => 
           _guid: 'browser', objects: [
             { _guid: 'browser-context', objects: [
               { _guid: 'request-context', objects: [] },
-              { _guid: 'tracing', objects: [] },
             ] },
+            { _guid: 'tracing', objects: [] },
           ]
         },
       ]
@@ -226,8 +226,8 @@ it('should not generate dispatchers for subresources w/o listeners', async ({ pa
                 ]
               },
               { _guid: 'request-context', objects: [] },
-              { _guid: 'tracing', objects: [] }
             ] },
+            { _guid: 'tracing', objects: [] }
           ]
         }],
       },
@@ -331,11 +331,11 @@ it('exposeFunction should not leak', async ({ page, expectScopeState, server }) 
                     '_guid': 'request-context',
                     'objects': [],
                   },
-                  {
-                    '_guid': 'tracing',
-                    'objects': [],
-                  },
                 ],
+              },
+              {
+                '_guid': 'tracing',
+                'objects': [],
               },
             ],
           },

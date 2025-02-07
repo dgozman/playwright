@@ -70,12 +70,17 @@ type RecordingState = {
 const kScreencastOptions = { width: 800, height: 600, quality: 90 };
 
 export class Tracing extends SdkObject implements InstrumentationListener, SnapshotterDelegate, HarTracerDelegate {
+  static Events = {
+    ReadyToDispose: 'readyToDispose',
+  };
+
   private _fs = new SerializedFS();
   private _snapshotter?: Snapshotter;
   private _harTracer: HarTracer;
   private _screencastListeners: RegisteredListener[] = [];
   private _eventListeners: RegisteredListener[] = [];
   private _context: BrowserContext | APIRequestContext;
+  private _contextClosed = false;
   // Note: state should only be touched inside API methods, but not inside trace operations.
   private _state: RecordingState | undefined;
   private _isStopping = false;
@@ -123,6 +128,8 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     await this.stopChunk({ mode: 'discard' }).catch(() => {});
     await this.stop();
     this._snapshotter?.resetForReuse();
+    // Make sure to dispose the dispatcher - we'll get a new one, together with the context itself.
+    this.emit(Tracing.Events.ReadyToDispose);
   }
 
   async start(options: TracerOptions) {
@@ -317,11 +324,22 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
   abort() {
     this._snapshotter?.dispose();
     this._harTracer.stop();
+    this._contextClosed = true;
+    this._maybeFireReadyToDispose();
   }
 
   async flush() {
-    this.abort();
+    this._snapshotter?.dispose();
+    this._harTracer.stop();
+    this._contextClosed = true;
     await this._fs.syncAndGetError();
+    this._maybeFireReadyToDispose();
+  }
+
+  private _maybeFireReadyToDispose() {
+    if (this._state?.recording || !this._contextClosed)
+      return;
+    this.emit(Tracing.Events.ReadyToDispose);
   }
 
   private _closeAllGroups() {
@@ -373,6 +391,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     if (params.mode === 'discard') {
       this._isStopping = false;
       this._state.recording = false;
+      this._maybeFireReadyToDispose();
       return {};
     }
 
@@ -388,6 +407,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     this._isStopping = false;
     if (this._state)
       this._state.recording = false;
+    this._maybeFireReadyToDispose();
 
     // IMPORTANT: no awaits after this point, to make sure recording state is correct.
 

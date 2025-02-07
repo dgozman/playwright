@@ -130,8 +130,6 @@ export abstract class APIRequestContext extends SdkObject {
     this.fetchLog.delete(fetchUid);
   }
 
-  abstract tracing(): Tracing;
-
   abstract dispose(options: { reason?: string }): Promise<void>;
 
   abstract _defaultOptions(): FetchRequestOptions;
@@ -592,10 +590,6 @@ export class BrowserContextAPIRequestContext extends APIRequestContext {
     context.once(BrowserContext.Events.Close, () => this._disposeImpl());
   }
 
-  override tracing() {
-    return this._context.tracing;
-  }
-
   override async dispose(options: { reason?: string }) {
     this._closeReason = options.reason;
     this.fetchResponses.clear();
@@ -665,7 +659,7 @@ export class GlobalAPIRequestContext extends APIRequestContext {
     this._tracing = new Tracing(this, options.tracesDir);
   }
 
-  override tracing() {
+  tracing() {
     return this._tracing;
   }
 

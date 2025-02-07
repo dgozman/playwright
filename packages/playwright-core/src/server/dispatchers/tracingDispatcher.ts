@@ -15,24 +15,25 @@
  */
 
 import { ArtifactDispatcher } from './artifactDispatcher';
-import { Dispatcher, existingDispatcher } from './dispatcher';
+import { Dispatcher, DispatcherScope, existingDispatcher } from './dispatcher';
+import { Tracing } from '../trace/recorder/tracing';
 
-import type { BrowserContextDispatcher } from './browserContextDispatcher';
-import type { APIRequestContextDispatcher } from './networkDispatchers';
-import type { Tracing } from '../trace/recorder/tracing';
 import type { CallMetadata } from '@protocol/callMetadata';
 import type * as channels from '@protocol/channels';
 
-export class TracingDispatcher extends Dispatcher<Tracing, channels.TracingChannel, BrowserContextDispatcher | APIRequestContextDispatcher> implements channels.TracingChannel {
+export class TracingDispatcher extends Dispatcher<Tracing, channels.TracingChannel, DispatcherScope> implements channels.TracingChannel {
   _type_Tracing = true;
 
-  static from(scope: BrowserContextDispatcher | APIRequestContextDispatcher, tracing: Tracing): TracingDispatcher {
+  static from(scope: DispatcherScope, tracing: Tracing): TracingDispatcher {
     const result = existingDispatcher<TracingDispatcher>(tracing);
     return result || new TracingDispatcher(scope, tracing);
   }
 
-  constructor(scope: BrowserContextDispatcher | APIRequestContextDispatcher, tracing: Tracing) {
+  constructor(scope: DispatcherScope, tracing: Tracing) {
     super(scope, tracing, 'Tracing', {});
+    // Tracing can outlive the owner context, so that trace can be recovered after the context is gone.
+    // Therefore, tracing dispatcher is disposed when a) owner context is closed and b) any ongoing recording is stopped.
+    this.addObjectListener(Tracing.Events.ReadyToDispose, () => this._dispose());
   }
 
   async tracingStart(params: channels.TracingTracingStartParams): Promise<channels.TracingTracingStartResult> {

@@ -52,9 +52,11 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   _webSocketInterceptionPatterns: channels.BrowserContextSetWebSocketInterceptionPatternsParams['patterns'] = [];
 
   constructor(parentScope: DispatcherScope, context: BrowserContext) {
-    // We will reparent these to the context below.
-    const requestContext = APIRequestContextDispatcher.from(parentScope as BrowserContextDispatcher, context.fetchRequest);
-    const tracing = TracingDispatcher.from(parentScope as BrowserContextDispatcher, context.tracing);
+    // Note that tracing can outlive the context and even the browser, thus double "parentScope".
+    const tracing = TracingDispatcher.from(parentScope.parentScope(), context.tracing);
+
+    // We will reparent this to the context below.
+    const requestContext = new APIRequestContextDispatcher(parentScope as BrowserContextDispatcher, context.fetchRequest, tracing);
 
     super(parentScope, context, 'BrowserContext', {
       isChromium: context._browser.options.isChromium,
@@ -64,7 +66,6 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     });
 
     this.adopt(requestContext);
-    this.adopt(tracing);
 
     this._context = context;
     // Note: when launching persistent context, dispatcher is created very late,
