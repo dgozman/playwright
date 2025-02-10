@@ -1317,3 +1317,38 @@ test('should record trace snapshot for more obscure commands', async ({ runInlin
   expect(snapshots.snapshotByName(snapshotFrameOrPageId, boundingBoxAction.beforeSnapshot)).toBeTruthy();
   expect(snapshots.snapshotByName(snapshotFrameOrPageId, boundingBoxAction.afterSnapshot)).toBeTruthy();
 });
+
+test('should not duplicate network from beforeAll hook', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/33106' },
+}, async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      import { test, expect } from '@playwright/test';
+      let shared;
+      test.beforeAll(async ({ browser }) => {
+        shared = await browser.newPage();
+        await shared.route('**/*', route => route.fulfill({ body: 'hello' }));
+        await shared.goto('https://playwright.dev/');
+      });
+      test('pass1', async ({ page }) => {
+        await page.route('**/*', route => route.fulfill({ body: 'hello' }));
+        await page.goto('https://playwright1.dev/');
+      });
+      test('pass2', async ({ page }) => {
+        await page.route('**/*', route => route.fulfill({ body: 'hello' }));
+        await page.goto('https://playwright2.dev/');
+      });
+      test.afterAll(async ({}) => {
+        await shared.close();
+      });
+    `,
+  }, { trace: 'on' });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(2);
+
+  const trace1 = await parseTrace(test.info().outputPath('test-results', 'a-pass1', 'trace.zip'));
+  expect(trace1.network.map(r => r.request.url).sort()).toEqual(['https://playwright.dev/', 'https://playwright1.dev/']);
+
+  const trace2 = await parseTrace(test.info().outputPath('test-results', 'a-pass2', 'trace.zip'));
+  expect(trace2.network.map(r => r.request.url).sort()).toEqual(['https://playwright.dev/', 'https://playwright2.dev/']);
+});

@@ -15,6 +15,8 @@
  */
 
 import { test, expect } from './playwright-test-fixtures';
+import { parseTrace } from '../config/utils';
+import fs from 'fs';
 
 test('should work with connectOptions', async ({ runInlineTest }) => {
   const result = await runInlineTest({
@@ -166,4 +168,45 @@ test('should print debug log when failed to connect', async ({ runInlineTest }) 
   expect(result.failed).toBe(1);
   expect(result.output).toContain('b-debug-log-string');
   expect(result.results[0].attachments).toEqual([]);
+});
+
+test.only('should record trace', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.js': `
+      module.exports = {
+        globalSetup: './global-setup',
+        use: {
+          connectOptions: {
+            wsEndpoint: process.env.CONNECT_WS_ENDPOINT,
+          },
+          trace: 'retain-on-failure',
+        },
+      };
+    `,
+    'global-setup.ts': `
+      import { chromium } from '@playwright/test';
+      module.exports = async () => {
+        const server = await chromium.launchServer();
+        process.env.CONNECT_WS_ENDPOINT = server.wsEndpoint();
+        return () => server.close();
+      };
+    `,
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+      test('pass', async ({ page }) => {
+        expect(1).toBe(1);
+      });
+      test('fail', async ({ page }) => {
+        expect(1).toBe(2);
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(1);
+  expect(result.failed).toBe(1);
+
+  expect(fs.existsSync(test.info().outputPath('test-results', 'a-pass', 'trace.zip'))).toBe(false);
+  const trace1 = await parseTrace(test.info().outputPath('test-results', 'a-fail', 'trace.zip'));
+  console.log(trace1);
+  // expect(trace1.network.map(r => r.request.url).sort()).toEqual(['https://playwright.dev/', 'https://playwright1.dev/']);
 });

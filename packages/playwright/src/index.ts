@@ -506,7 +506,7 @@ function resolveClientCerticates(clientCertificates: ClientCertificates): Client
   return clientCertificates;
 }
 
-const kTracingStarted = Symbol('kTracingStarted');
+const kTracingState = Symbol('kTracingState');
 const kIsReusedContext = Symbol('kReusedContext');
 
 function connectOptionsFromEnv() {
@@ -615,7 +615,6 @@ class ArtifactsRecorder {
   _playwright: PlaywrightImpl;
   _artifactsDir: string;
   private _reusedContexts = new Set<BrowserContext>();
-  private _startedCollectingArtifacts: symbol;
 
   private _pageSnapshotRecorder: SnapshotRecorder;
   private _screenshotRecorder: SnapshotRecorder;
@@ -624,7 +623,6 @@ class ArtifactsRecorder {
     this._playwright = playwright;
     this._artifactsDir = artifactsDir;
     const screenshotOptions = typeof screenshot === 'string' ? undefined : screenshot;
-    this._startedCollectingArtifacts = Symbol('startedCollectingArtifacts');
 
     this._screenshotRecorder = new SnapshotRecorder(this, normalizeScreenshotMode(screenshot), 'screenshot', 'image/png', '.png', async (page, path) => {
       await page.screenshot({ ...screenshotOptions, timeout: 5000, path, caret: 'initial' });
@@ -665,7 +663,6 @@ class ArtifactsRecorder {
     // Do not record empty traces and useless screenshots for them.
     if (this._reusedContexts.has(context))
       return;
-    await this._stopTracing(context.tracing);
 
     await this._screenshotRecorder.captureTemporary(context);
     await this._pageSnapshotRecorder.captureTemporary(context);
@@ -677,8 +674,6 @@ class ArtifactsRecorder {
   }
 
   async willCloseRequestContext(context: APIRequestContext) {
-    const tracing = (context as any)._tracing as Tracing;
-    await this._stopTracing(tracing);
   }
 
   async didFinishTestFunction() {
@@ -689,46 +684,32 @@ class ArtifactsRecorder {
   async didFinishTest() {
     await this.didFinishTestFunction();
 
-    const leftoverContexts = this._playwright._allContexts().filter(context => !this._reusedContexts.has(context));
-    const leftoverApiRequests: APIRequestContext[] =  Array.from((this._playwright.request as any)._contexts as Set<APIRequestContext>);
-
-    // Collect traces/screenshots for remaining contexts.
-    await Promise.all(leftoverContexts.map(async context => {
-      await this._stopTracing(context.tracing);
-    }).concat(leftoverApiRequests.map(async context => {
-      const tracing = (context as any)._tracing as Tracing;
-      await this._stopTracing(tracing);
-    })));
-
     await this._screenshotRecorder.persistTemporary();
     await this._pageSnapshotRecorder.persistTemporary();
   }
 
   private async _startTraceChunkOnContextCreation(tracing: Tracing) {
-    const options = this._testInfo._tracing.traceOptions();
+    const state = (tracing as any)[kTracingState] as 'recording' | 'paused' | undefined;
+    if (state === 'recording')
+      return;
+
+    const stopTracing = async (filePath: string | undefined) => {
+      await tracing.stopChunk({ path: filePath });
+      (tracing as any)[kTracingState] = 'paused';
+    };
+    const options = this._testInfo._tracing.registerTraceSource(stopTracing);
     if (options) {
-      const title = this._testInfo._tracing.traceTitle();
-      const name = this._testInfo._tracing.generateNextTraceRecordingName();
-      if (!(tracing as any)[kTracingStarted]) {
-        await tracing.start({ ...options, title, name });
-        (tracing as any)[kTracingStarted] = true;
-      } else {
-        await tracing.startChunk({ title, name });
-      }
+      if (state === 'paused')
+        await tracing.startChunk(options);
+      else
+        await tracing.start(options);
+      (tracing as any)[kTracingState] = 'recording';
     } else {
-      if ((tracing as any)[kTracingStarted]) {
-        (tracing as any)[kTracingStarted] = false;
+      if (state) {
+        (tracing as any)[kTracingState] = undefined;
         await tracing.stop();
       }
     }
-  }
-
-  private async _stopTracing(tracing: Tracing) {
-    if ((tracing as any)[this._startedCollectingArtifacts])
-      return;
-    (tracing as any)[this._startedCollectingArtifacts] = true;
-    if (this._testInfo._tracing.traceOptions() && (tracing as any)[kTracingStarted])
-      await tracing.stopChunk({ path: this._testInfo._tracing.generateNextTraceRecordingPath() });
   }
 }
 

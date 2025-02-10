@@ -36,16 +36,18 @@ let traceOrdinal = 0;
 
 type TraceFixtureValue =  PlaywrightWorkerOptions['trace'] | undefined;
 type TraceOptions = { screenshots: boolean, snapshots: boolean, sources: boolean, attachments: boolean, _live: boolean, mode: TraceMode };
+type FullTraceOptions = TraceOptions & { title: string, name: string };
+type TraceSourceCallback = (filePath: string | undefined) => Promise<void>;
 
 export class TestTracing {
   private _testInfo: TestInfoImpl;
   private _options: TraceOptions | undefined;
   private _liveTraceFile: { file: string, fs: SerializedFS } | undefined;
   private _traceEvents: trace.TraceEvent[] = [];
-  private _temporaryTraceFiles: string[] = [];
   private _artifactsDir: string;
   private _tracesDir: string;
   private _contextCreatedEvent: trace.ContextCreatedTraceEvent;
+  private _sources: TraceSourceCallback[] = [];
 
   constructor(testInfo: TestInfoImpl, artifactsDir: string) {
     this._testInfo = testInfo;
@@ -121,11 +123,18 @@ export class TestTracing {
     return this._tracesDir;
   }
 
-  traceTitle() {
+  private _traceTitle() {
     return [path.relative(this._testInfo.project.testDir, this._testInfo.file) + ':' + this._testInfo.line, ...this._testInfo.titlePath.slice(1)].join(' › ');
   }
 
-  generateNextTraceRecordingName() {
+  registerTraceSource(source: TraceSourceCallback): FullTraceOptions | undefined {
+    if (!this._options)
+      return;
+    this._sources.push(source);
+    return { ...this._options, title: this._traceTitle(), name: this._generateNextTraceRecordingName() };
+  }
+
+  private _generateNextTraceRecordingName() {
     const ordinalSuffix = traceOrdinal ? `-recording${traceOrdinal}` : '';
     ++traceOrdinal;
     const retrySuffix = this._testInfo.retry ? `-retry${this._testInfo.retry}` : '';
@@ -133,32 +142,28 @@ export class TestTracing {
     return `${this._testInfo.testId}${retrySuffix}${ordinalSuffix}`;
   }
 
-  generateNextTraceRecordingPath() {
-    const file = path.join(this._artifactsDir, createGuid() + '.zip');
-    this._temporaryTraceFiles.push(file);
-    return file;
-  }
-
-  traceOptions() {
-    return this._options;
-  }
-
   async stopIfNeeded() {
     if (!this._options)
       return;
+
+    const testFailed = this._testInfo.status !== this._testInfo.expectedStatus;
+    const shouldAbandonTrace = !testFailed && (this._options.mode === 'retain-on-failure' || this._options.mode === 'retain-on-first-failure');
 
     const error = await this._liveTraceFile?.fs.syncAndGetError();
     if (error)
       throw error;
 
-    const testFailed = this._testInfo.status !== this._testInfo.expectedStatus;
-    const shouldAbandonTrace = !testFailed && (this._options.mode === 'retain-on-failure' || this._options.mode === 'retain-on-first-failure');
-
     if (shouldAbandonTrace) {
-      for (const file of this._temporaryTraceFiles)
-        await fs.promises.unlink(file).catch(() => {});
+      await Promise.all(this._sources.map(source => source(undefined)));
       return;
     }
+
+    const allTraceFiles: string[] = [];
+    await Promise.all(this._sources.map(source => {
+      const filePath = path.join(this._artifactsDir, createGuid() + '.zip');
+      allTraceFiles.push(filePath);
+      return source(filePath);
+    }));
 
     const zipFile = new yazl.ZipFile();
 
@@ -211,14 +216,17 @@ export class TestTracing {
     const traceContent = Buffer.from(this._traceEvents.map(e => JSON.stringify(e)).join('\n'));
     zipFile.addBuffer(traceContent, testTraceEntryName);
 
+    const testTraceFile = path.join(this._artifactsDir, createGuid() + '.zip');
+    allTraceFiles.push(testTraceFile);
+
     await new Promise(f => {
       zipFile.end(undefined, () => {
-        zipFile.outputStream.pipe(fs.createWriteStream(this.generateNextTraceRecordingPath())).on('close', f);
+        zipFile.outputStream.pipe(fs.createWriteStream(testTraceFile)).on('close', f);
       });
     });
 
     const tracePath = this._testInfo.outputPath('trace.zip');
-    await mergeTraceFiles(tracePath, this._temporaryTraceFiles);
+    await mergeTraceFiles(tracePath, allTraceFiles);
     this._testInfo.attachments.push({ name: 'trace', path: tracePath, contentType: 'application/zip' });
   }
 
