@@ -105,7 +105,9 @@ export class DebugController extends SdkObject {
     const pages = this._playwright.allPages();
     if (!pages.length) {
       const [browser] = this._playwright.allBrowsers();
-      const { context } = await browser.newContextForReuse({}, internalMetadata);
+      const { context } = await browser.newContextForReuse({
+        testIdAttributeName: params.testIdAttributeName,
+      }, internalMetadata);
       await context.newPage(internalMetadata);
     }
     // Update test id attribute.

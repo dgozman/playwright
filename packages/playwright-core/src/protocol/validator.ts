@@ -1021,14 +1021,6 @@ scheme.BrowserContextNewPageParams = tOptional(tObject({}));
 scheme.BrowserContextNewPageResult = tObject({
   page: tChannel(['Page']),
 });
-scheme.BrowserContextRegisterSelectorEngineParams = tObject({
-  selectorEngine: tType('SelectorEngine'),
-});
-scheme.BrowserContextRegisterSelectorEngineResult = tOptional(tObject({}));
-scheme.BrowserContextSetTestIdAttributeNameParams = tObject({
-  testIdAttributeName: tString,
-});
-scheme.BrowserContextSetTestIdAttributeNameResult = tOptional(tObject({}));
 scheme.BrowserContextSetExtraHTTPHeadersParams = tObject({
   headers: tArray(tType('NameValue')),
 });

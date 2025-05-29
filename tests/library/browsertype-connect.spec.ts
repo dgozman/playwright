@@ -464,7 +464,8 @@ for (const kind of ['launchServer', 'run-server'] as const) {
       await page1.setContent(`<div>hello</div>`);
       expect(await page1.innerHTML('css=div')).toBe('hello');
       expect(await page1.innerHTML(`${mycss1}=div`)).toBe('hello');
-      expect(await page1.innerHTML(`${mycss2}=div`)).toBe('hello');
+      const error1 = await page1.innerHTML(`${mycss2}=div`).catch(e => e);
+      expect(error1.message).toContain(`Unknown engine "${mycss2}"`);
 
       const browser2 = await connect(remoteServer.wsEndpoint());
 
@@ -479,6 +480,7 @@ for (const kind of ['launchServer', 'run-server'] as const) {
       expect(await page2.innerHTML(`${mycss3}=div`)).toBe('hello');
 
       await browser1.close();
+      await browser2.close();
     });
 
     test('should not throw on close after disconnect', async ({ connect, startRemoteServer }) => {

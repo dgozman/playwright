@@ -77,8 +77,6 @@ export const methodMetainfo = new Map<string, { internal?: boolean, title?: stri
   ['BrowserContext.exposeBinding', { title: 'Expose binding', }],
   ['BrowserContext.grantPermissions', { title: 'Grant permissions', }],
   ['BrowserContext.newPage', { title: 'Create page', }],
-  ['BrowserContext.registerSelectorEngine', { internal: true, }],
-  ['BrowserContext.setTestIdAttributeName', { internal: true, }],
   ['BrowserContext.setExtraHTTPHeaders', { title: 'Set extra HTTP headers', }],
   ['BrowserContext.setGeolocation', { title: 'Set geolocation', }],
   ['BrowserContext.setHTTPCredentials', { title: 'Set HTTP credentials', }],

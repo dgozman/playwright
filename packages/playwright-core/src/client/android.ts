@@ -102,7 +102,6 @@ export class Android extends ChannelOwner<channels.AndroidChannel> implements ap
 export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel> implements api.AndroidDevice {
   readonly _timeoutSettings: TimeoutSettings;
   private _webViews = new Map<string, AndroidWebView>();
-  private _android: Android;
   _shouldCloseConnectionOnClose = false;
 
   static from(androidDevice: channels.AndroidDeviceChannel): AndroidDevice {
@@ -113,7 +112,6 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel> i
 
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.AndroidDeviceInitializer) {
     super(parent, type, guid, initializer);
-    this._android = parent as Android;
     this.input = new AndroidInput(this);
     this._timeoutSettings = new TimeoutSettings(this._platform, (parent as Android)._timeoutSettings);
     this._channel.on('webViewAdded', ({ webView }) => this._onWebViewAdded(webView));
@@ -262,9 +260,6 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel> i
     const contextOptions = await prepareBrowserContextParams(this._platform, options);
     const result = await this._channel.launchBrowser(contextOptions);
     const context = BrowserContext.from(result.context);
-    const selectors = this._android._playwright.selectors;
-    selectors._contextsForSelectors.add(context);
-    context.once(Events.BrowserContext.Close, () => selectors._contextsForSelectors.delete(context));
     await context._initializeHarFromOptions(options.recordHar);
     return context;
   }

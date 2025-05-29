@@ -115,7 +115,6 @@ export class Browser extends ChannelOwner<channels.BrowserChannel> implements ap
     context._logger = this._logger;
     context.tracing._tracesDir = this._options.tracesDir;
     this._browserType._contexts.add(context);
-    this._browserType._playwright.selectors._contextsForSelectors.add(context);
     context.setDefaultTimeout(this._browserType._playwright._defaultContextTimeout);
     context.setDefaultNavigationTimeout(this._browserType._playwright._defaultContextNavigationTimeout);
   }

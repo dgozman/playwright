@@ -160,24 +160,29 @@ it.describe('selector generator', () => {
       </div>
     `;
 
-    const checkPage = async (page: Page) => {
+    const checkPage = async (page: Page, hasProperTestId: boolean) => {
       await page.setContent(content);
       const error = await page.locator('.foo').hover().catch(e => e);
       expect(error.message).toContain('strict mode violation');
       expect(error.message).toContain('<div class=\"foo bar:0');
       expect(error.message).toContain('<div class=\"foo bar:1');
-      expect(error.message).toContain(`aka getByTestId('One')`);
-      expect(error.message).toContain(`aka getByTestId('Two')`);
+      if (hasProperTestId) {
+        expect(error.message).toContain(`aka getByTestId('One')`);
+        expect(error.message).toContain(`aka getByTestId('Two')`);
+      } else {
+        expect(error.message).not.toContain(`aka getByTestId('One')`);
+        expect(error.message).not.toContain(`aka getByTestId('Two')`);
+      }
     };
 
     playwright.selectors.setTestIdAttribute('data-custom-id');
     // Check page and context that were created before setting the attribute.
-    await checkPage(page);
+    await checkPage(page, false);
 
     const context2 = await contextFactory();
     const page2 = await context2.newPage();
     // Check page and context that were created after setting the attribute.
-    await checkPage(page2);
+    await checkPage(page2, true);
   });
 
   it('should handle first non-unique data-testid', async ({ page }) => {

@@ -52,10 +52,10 @@ export class Selectors {
     this._engines = new Map();
     this._testIdAttributeName = testIdAttributeName ?? 'data-testid';
     for (const engine of engines)
-      this.register(engine);
+      this._register(engine);
   }
 
-  register(engine: channels.SelectorEngine) {
+  private _register(engine: channels.SelectorEngine) {
     if (!engine.name.match(/^[a-zA-Z_0-9-]+$/))
       throw new Error('Selector engine name may only contain [a-zA-Z0-9_] characters');
     // Note: we keep 'zs' for future use.

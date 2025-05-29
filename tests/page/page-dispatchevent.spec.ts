@@ -103,27 +103,6 @@ it('should dispatch click when node is added in shadow dom', async ({ page, serv
   expect(await page.evaluate(() => window['clicked'])).toBe(true);
 });
 
-it('should be atomic', async ({ playwright, page }) => {
-  const createDummySelector = () => ({
-    query(root, selector) {
-      const result = root.querySelector(selector);
-      if (result)
-        void Promise.resolve().then(() => result.onclick = '');
-      return result;
-    },
-    queryAll(root: HTMLElement, selector: string) {
-      const result = Array.from(root.querySelectorAll(selector));
-      for (const e of result)
-        void Promise.resolve().then(() => (e as HTMLElement).onclick = null);
-      return result;
-    }
-  });
-  await playwright.selectors.register('dispatchEvent', createDummySelector);
-  await page.setContent(`<div onclick="window._clicked=true">Hello</div>`);
-  await page.dispatchEvent('dispatchEvent=div', 'click');
-  expect(await page.evaluate(() => window['_clicked'])).toBe(true);
-});
-
 it('should dispatch drag drop events', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/drag-n-drop.html');
   const dataTransfer = await page.evaluateHandle(() => new DataTransfer());

@@ -1625,8 +1625,6 @@ export interface BrowserContextChannel extends BrowserContextEventTarget, EventT
   exposeBinding(params: BrowserContextExposeBindingParams, metadata?: CallMetadata): Promise<BrowserContextExposeBindingResult>;
   grantPermissions(params: BrowserContextGrantPermissionsParams, metadata?: CallMetadata): Promise<BrowserContextGrantPermissionsResult>;
   newPage(params?: BrowserContextNewPageParams, metadata?: CallMetadata): Promise<BrowserContextNewPageResult>;
-  registerSelectorEngine(params: BrowserContextRegisterSelectorEngineParams, metadata?: CallMetadata): Promise<BrowserContextRegisterSelectorEngineResult>;
-  setTestIdAttributeName(params: BrowserContextSetTestIdAttributeNameParams, metadata?: CallMetadata): Promise<BrowserContextSetTestIdAttributeNameResult>;
   setExtraHTTPHeaders(params: BrowserContextSetExtraHTTPHeadersParams, metadata?: CallMetadata): Promise<BrowserContextSetExtraHTTPHeadersResult>;
   setGeolocation(params: BrowserContextSetGeolocationParams, metadata?: CallMetadata): Promise<BrowserContextSetGeolocationResult>;
   setHTTPCredentials(params: BrowserContextSetHTTPCredentialsParams, metadata?: CallMetadata): Promise<BrowserContextSetHTTPCredentialsResult>;
@@ -1786,20 +1784,6 @@ export type BrowserContextNewPageOptions = {};
 export type BrowserContextNewPageResult = {
   page: PageChannel,
 };
-export type BrowserContextRegisterSelectorEngineParams = {
-  selectorEngine: SelectorEngine,
-};
-export type BrowserContextRegisterSelectorEngineOptions = {
-
-};
-export type BrowserContextRegisterSelectorEngineResult = void;
-export type BrowserContextSetTestIdAttributeNameParams = {
-  testIdAttributeName: string,
-};
-export type BrowserContextSetTestIdAttributeNameOptions = {
-
-};
-export type BrowserContextSetTestIdAttributeNameResult = void;
 export type BrowserContextSetExtraHTTPHeadersParams = {
   headers: NameValue[],
 };

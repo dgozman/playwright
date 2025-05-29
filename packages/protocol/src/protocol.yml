@@ -1269,16 +1269,6 @@ BrowserContext:
       returns:
         page: Page
 
-    registerSelectorEngine:
-      internal: true
-      parameters:
-        selectorEngine: SelectorEngine
-
-    setTestIdAttributeName:
-      internal: true
-      parameters:
-        testIdAttributeName: string
-
     setExtraHTTPHeaders:
       title: Set extra HTTP headers
       parameters:

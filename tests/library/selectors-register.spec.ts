@@ -17,6 +17,8 @@
 
 import { browserTest as it, expect } from '../config/browserTest';
 
+it.skip(!!process.env.PW_TEST_CONNECT_WS_ENDPOINT, 'selectors.register does not support reuse');
+
 const createTagSelector = () => ({
   query(root, selector) {
     return root.querySelector(selector);
@@ -31,7 +33,7 @@ it('should work', async ({ playwright, browser }) => {
   await playwright.selectors.register('tag', `(${createTagSelector.toString()})()`);
 
   const context = await browser.newContext();
-  // Register another engine after creating context.
+  // Register another engine after creating context. It should not work.
   await playwright.selectors.register('tag2', `(${createTagSelector.toString()})()`);
 
   const page = await context.newPage();
@@ -41,13 +43,12 @@ it('should work', async ({ playwright, browser }) => {
   expect(await page.$eval('tag=SPAN', e => e.nodeName)).toBe('SPAN');
   expect(await page.$$eval('tag=DIV', es => es.length)).toBe(2);
 
-  expect(await page.$eval('tag2=DIV', e => e.nodeName)).toBe('DIV');
-  expect(await page.$eval('tag2=SPAN', e => e.nodeName)).toBe('SPAN');
-  expect(await page.$$eval('tag2=DIV', es => es.length)).toBe(2);
+  const error1 = await page.$('tag2=DIV').catch(e => e);
+  expect(error1.message).toContain('Unknown engine "tag2" while parsing selector tag2=DIV');
 
   // Selector names are case-sensitive.
-  const error = await page.$('tAG=DIV').catch(e => e);
-  expect(error.message).toContain('Unknown engine "tAG" while parsing selector tAG=DIV');
+  const error2 = await page.$('tAG=DIV').catch(e => e);
+  expect(error2.message).toContain('Unknown engine "tAG" while parsing selector tAG=DIV');
 
   await context.close();
 });
@@ -56,8 +57,6 @@ it('should work when registered on global', async ({ browser }) => {
   await require('@playwright/test').selectors.register('oop-tag', `(${createTagSelector.toString()})()`);
 
   const context = await browser.newContext();
-  // Register another engine after creating context.
-  await require('@playwright/test').selectors.register('oop-tag2', `(${createTagSelector.toString()})()`);
 
   const page = await context.newPage();
   await page.setContent('<div><span></span></div><div></div>');
@@ -66,23 +65,19 @@ it('should work when registered on global', async ({ browser }) => {
   expect(await page.$eval('oop-tag=SPAN', e => e.nodeName)).toBe('SPAN');
   expect(await page.$$eval('oop-tag=DIV', es => es.length)).toBe(2);
 
-  expect(await page.$eval('oop-tag2=DIV', e => e.nodeName)).toBe('DIV');
-  expect(await page.$eval('oop-tag2=SPAN', e => e.nodeName)).toBe('SPAN');
-  expect(await page.$$eval('oop-tag2=DIV', es => es.length)).toBe(2);
-
   await context.close();
 });
 
 it('should work with path', async ({ playwright, browser, asset }) => {
-  const page = await browser.newPage();
   await playwright.selectors.register('foo', { path: asset('sectionselectorengine.js') });
+
+  const page = await browser.newPage();
   await page.setContent('<section></section>');
   expect(await page.$eval('foo=whatever', e => e.nodeName)).toBe('SECTION');
   await page.close();
 });
 
 it('should work in main and isolated world', async ({ playwright, browser }) => {
-  const page = await browser.newPage();
   const createDummySelector = () => ({
     query(root, selector) {
       return window['__answer'];
@@ -93,6 +88,8 @@ it('should work in main and isolated world', async ({ playwright, browser }) => 
   });
   await playwright.selectors.register('main', createDummySelector);
   await playwright.selectors.register('isolated', createDummySelector, { contentScript: true });
+
+  const page = await browser.newPage();
   await page.setContent('<div><span><section></section></span></div>');
   await page.evaluate(() => window['__answer'] = document.querySelector('span'));
   // Works in main if asked.
@@ -115,10 +112,6 @@ it('should work in main and isolated world', async ({ playwright, browser }) => 
 });
 
 it('should handle errors', async ({ playwright, browser }) => {
-  const page = await browser.newPage();
-  let error = await page.$('neverregister=ignored').catch(e => e);
-  expect(error.message).toContain('Unknown engine "neverregister" while parsing selector neverregister=ignored');
-
   const createDummySelector = () => ({
     query(root, selector) {
       return root.querySelector('dummy');
@@ -128,12 +121,13 @@ it('should handle errors', async ({ playwright, browser }) => {
     }
   });
 
-  error = await playwright.selectors.register('$', createDummySelector).catch(e => e);
-  expect(error.message).toBe('selectors.register: Selector engine name may only contain [a-zA-Z0-9_] characters');
-
   // Selector names are case-sensitive.
   await playwright.selectors.register('dummy', createDummySelector);
   await playwright.selectors.register('duMMy', createDummySelector);
+
+  const page = await browser.newPage();
+  let error = await page.$('neverregister=ignored').catch(e => e);
+  expect(error.message).toContain('Unknown engine "neverregister" while parsing selector neverregister=ignored');
 
   error = await playwright.selectors.register('dummy', createDummySelector).catch(e => e);
   expect(error.message).toBe('selectors.register: "dummy" selector engine has been already registered');
@@ -144,7 +138,6 @@ it('should handle errors', async ({ playwright, browser }) => {
 });
 
 it('should not rely on engines working from the root', async ({ playwright, browser }) => {
-  const page = await browser.newPage();
   const createValueEngine = () => ({
     query(root, selector) {
       return root && root.value.includes(selector) ? root : undefined;
@@ -153,15 +146,15 @@ it('should not rely on engines working from the root', async ({ playwright, brow
       return root && root.value.includes(selector) ? [root] : [];
     },
   });
-
   await playwright.selectors.register('__value', createValueEngine);
+
+  const page = await browser.newPage();
   await page.setContent(`<input id=input1 value=value1><input id=input2 value=value2>`);
   expect(await page.$eval('input >> __value=value2', e => e.id)).toBe('input2');
   await page.close();
 });
 
 it('should throw a nice error if the selector returns a bad value', async ({ playwright, browser }) => {
-  const page = await browser.newPage();
   const createFakeEngine = () => ({
     query(root, selector) {
       return [document.body];
@@ -170,9 +163,159 @@ it('should throw a nice error if the selector returns a bad value', async ({ pla
       return [[document.body]];
     },
   });
-
   await playwright.selectors.register('__fake', createFakeEngine);
+
+  const page = await browser.newPage();
   const error = await page.$('__fake=value2').catch(e => e);
   expect(error.message).toContain('Expected a Node but got [object Array]');
+  await page.close();
+});
+
+it('textContent should be atomic', async ({ playwright, browser }) => {
+  const createDummySelector = () => ({
+    query(root, selector) {
+      const result = root.querySelector(selector);
+      if (result)
+        void Promise.resolve().then(() => result.textContent = 'modified');
+      return result;
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      const result = Array.from(root.querySelectorAll(selector));
+      for (const e of result)
+        void Promise.resolve().then(() => e.textContent = 'modified');
+      return result;
+    }
+  });
+  await playwright.selectors.register('textContent', createDummySelector);
+
+  const page = await browser.newPage();
+  await page.setContent(`<div>Hello</div>`);
+  const tc = await page.textContent('textContent=div');
+  expect(tc).toBe('Hello');
+  expect(await page.evaluate(() => document.querySelector('div').textContent)).toBe('modified');
+  await page.close();
+});
+
+it('innerText should be atomic', async ({ playwright, browser }) => {
+  const createDummySelector = () => ({
+    query(root: HTMLElement, selector: string) {
+      const result = root.querySelector(selector);
+      if (result)
+        void Promise.resolve().then(() => result.textContent = 'modified');
+      return result;
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      const result = Array.from(root.querySelectorAll(selector));
+      for (const e of result)
+        void Promise.resolve().then(() => e.textContent = 'modified');
+      return result;
+    }
+  });
+  await playwright.selectors.register('innerText', createDummySelector);
+
+  const page = await browser.newPage();
+  await page.setContent(`<div>Hello</div>`);
+  const tc = await page.innerText('innerText=div');
+  expect(tc).toBe('Hello');
+  expect(await page.evaluate(() => document.querySelector('div').innerText)).toBe('modified');
+  await page.close();
+});
+
+it('innerHTML should be atomic', async ({ playwright, browser }) => {
+  const createDummySelector = () => ({
+    query(root, selector) {
+      const result = root.querySelector(selector);
+      if (result)
+        void Promise.resolve().then(() => result.textContent = 'modified');
+      return result;
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      const result = Array.from(root.querySelectorAll(selector));
+      for (const e of result)
+        void Promise.resolve().then(() => e.textContent = 'modified');
+      return result;
+    }
+  });
+  await playwright.selectors.register('innerHTML', createDummySelector);
+
+  const page = await browser.newPage();
+  await page.setContent(`<div>Hello<span>world</span></div>`);
+  const tc = await page.innerHTML('innerHTML=div');
+  expect(tc).toBe('Hello<span>world</span>');
+  expect(await page.evaluate(() => document.querySelector('div').innerHTML)).toBe('modified');
+  await page.close();
+});
+
+it('getAttribute should be atomic', async ({ playwright, browser }) => {
+  const createDummySelector = () => ({
+    query(root: HTMLElement, selector: string) {
+      const result = root.querySelector(selector);
+      if (result)
+        void Promise.resolve().then(() => result.setAttribute('foo', 'modified'));
+      return result;
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      const result = Array.from(root.querySelectorAll(selector));
+      for (const e of result)
+        void Promise.resolve().then(() => (e as HTMLElement).setAttribute('foo', 'modified'));
+      return result;
+    }
+  });
+  await playwright.selectors.register('getAttribute', createDummySelector);
+
+  const page = await browser.newPage();
+  await page.setContent(`<div foo=hello></div>`);
+  const tc = await page.getAttribute('getAttribute=div', 'foo');
+  expect(tc).toBe('hello');
+  expect(await page.evaluate(() => document.querySelector('div').getAttribute('foo'))).toBe('modified');
+  await page.close();
+});
+
+it('isVisible should be atomic', async ({ playwright, browser }) => {
+  const createDummySelector = () => ({
+    query(root, selector) {
+      const result = root.querySelector(selector);
+      if (result)
+        void Promise.resolve().then(() => result.style.display = 'none');
+      return result;
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      const result = Array.from(root.querySelectorAll(selector));
+      for (const e of result)
+        void Promise.resolve().then(() => (e as HTMLElement).style.display = 'none');
+      return result;
+    }
+  });
+  await playwright.selectors.register('isVisible', createDummySelector);
+
+  const page = await browser.newPage();
+  await page.setContent(`<div>Hello</div>`);
+  const result = await page.isVisible('isVisible=div');
+  expect(result).toBe(true);
+  expect(await page.evaluate(() => document.querySelector('div').style.display)).toBe('none');
+  await page.close();
+});
+
+it('dispatchEvent be atomic', async ({ playwright, browser }) => {
+  const createDummySelector = () => ({
+    query(root, selector) {
+      const result = root.querySelector(selector);
+      if (result)
+        void Promise.resolve().then(() => result.onclick = '');
+      return result;
+    },
+    queryAll(root: HTMLElement, selector: string) {
+      const result = Array.from(root.querySelectorAll(selector));
+      for (const e of result)
+        void Promise.resolve().then(() => (e as HTMLElement).onclick = null);
+      return result;
+    }
+  });
+  await playwright.selectors.register('dispatchEvent', createDummySelector);
+
+  const page = await browser.newPage();
+  await page.setContent(`<div onclick="window._clicked=true">Hello</div>`);
+  await page.dispatchEvent('dispatchEvent=div', 'click');
+  expect(await page.evaluate(() => window['_clicked'])).toBe(true);
   await page.close();
 });
