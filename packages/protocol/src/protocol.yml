@@ -339,6 +339,7 @@ RecordHarOptions:
     urlGlob: string?
     urlRegexSource: string?
     urlRegexFlags: string?
+    baseURL: string?
 
 
 FormField:
@@ -601,7 +602,6 @@ ContextOptions:
       - no-preference
       - more
       - no-override
-    baseURL: string?
     recordVideo:
       type: object?
       properties:
@@ -803,7 +803,6 @@ Playwright:
     newRequest:
       title: Create request context
       parameters:
-        baseURL: string?
         userAgent: string?
         ignoreHTTPSErrors: boolean?
         extraHTTPHeaders:
@@ -1309,6 +1308,7 @@ BrowserContext:
     setNetworkInterceptionPatterns:
       internal: true
       parameters:
+        baseURL: string?
         patterns:
           type: array
           items:
@@ -1321,6 +1321,7 @@ BrowserContext:
     setWebSocketInterceptionPatterns:
       internal: true
       parameters:
+        baseURL: string?
         patterns:
           type: array
           items:
@@ -1715,6 +1716,7 @@ Page:
     setNetworkInterceptionPatterns:
       internal: true
       parameters:
+        baseURL: string?
         patterns:
           type: array
           items:
@@ -1727,6 +1729,7 @@ Page:
     setWebSocketInterceptionPatterns:
       internal: true
       parameters:
+        baseURL: string?
         patterns:
           type: array
           items:

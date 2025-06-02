@@ -199,6 +199,7 @@ scheme.RecordHarOptions = tObject({
   urlGlob: tOptional(tString),
   urlRegexSource: tOptional(tString),
   urlRegexFlags: tOptional(tString),
+  baseURL: tOptional(tString),
 });
 scheme.FormField = tObject({
   name: tString,
@@ -382,7 +383,6 @@ scheme.PlaywrightInitializer = tObject({
   socksSupport: tOptional(tChannel(['SocksSupport'])),
 });
 scheme.PlaywrightNewRequestParams = tObject({
-  baseURL: tOptional(tString),
   userAgent: tOptional(tString),
   ignoreHTTPSErrors: tOptional(tBoolean),
   extraHTTPHeaders: tOptional(tArray(tType('NameValue'))),
@@ -624,7 +624,6 @@ scheme.BrowserTypeLaunchPersistentContextParams = tObject({
   forcedColors: tOptional(tEnum(['active', 'none', 'no-override'])),
   acceptDownloads: tOptional(tEnum(['accept', 'deny', 'internal-browser-default'])),
   contrast: tOptional(tEnum(['no-preference', 'more', 'no-override'])),
-  baseURL: tOptional(tString),
   recordVideo: tOptional(tObject({
     dir: tString,
     size: tOptional(tObject({
@@ -716,7 +715,6 @@ scheme.BrowserNewContextParams = tObject({
   forcedColors: tOptional(tEnum(['active', 'none', 'no-override'])),
   acceptDownloads: tOptional(tEnum(['accept', 'deny', 'internal-browser-default'])),
   contrast: tOptional(tEnum(['no-preference', 'more', 'no-override'])),
-  baseURL: tOptional(tString),
   recordVideo: tOptional(tObject({
     dir: tString,
     size: tOptional(tObject({
@@ -787,7 +785,6 @@ scheme.BrowserNewContextForReuseParams = tObject({
   forcedColors: tOptional(tEnum(['active', 'none', 'no-override'])),
   acceptDownloads: tOptional(tEnum(['accept', 'deny', 'internal-browser-default'])),
   contrast: tOptional(tEnum(['no-preference', 'more', 'no-override'])),
-  baseURL: tOptional(tString),
   recordVideo: tOptional(tObject({
     dir: tString,
     size: tOptional(tObject({
@@ -901,7 +898,6 @@ scheme.BrowserContextInitializer = tObject({
     forcedColors: tOptional(tEnum(['active', 'none', 'no-override'])),
     acceptDownloads: tOptional(tEnum(['accept', 'deny', 'internal-browser-default'])),
     contrast: tOptional(tEnum(['no-preference', 'more', 'no-override'])),
-    baseURL: tOptional(tString),
     recordVideo: tOptional(tObject({
       dir: tString,
       size: tOptional(tObject({
@@ -1050,6 +1046,7 @@ scheme.BrowserContextSetHTTPCredentialsParams = tObject({
 });
 scheme.BrowserContextSetHTTPCredentialsResult = tOptional(tObject({}));
 scheme.BrowserContextSetNetworkInterceptionPatternsParams = tObject({
+  baseURL: tOptional(tString),
   patterns: tArray(tObject({
     glob: tOptional(tString),
     regexSource: tOptional(tString),
@@ -1058,6 +1055,7 @@ scheme.BrowserContextSetNetworkInterceptionPatternsParams = tObject({
 });
 scheme.BrowserContextSetNetworkInterceptionPatternsResult = tOptional(tObject({}));
 scheme.BrowserContextSetWebSocketInterceptionPatternsParams = tObject({
+  baseURL: tOptional(tString),
   patterns: tArray(tObject({
     glob: tOptional(tString),
     regexSource: tOptional(tString),
@@ -1332,6 +1330,7 @@ scheme.PageSetExtraHTTPHeadersParams = tObject({
 });
 scheme.PageSetExtraHTTPHeadersResult = tOptional(tObject({}));
 scheme.PageSetNetworkInterceptionPatternsParams = tObject({
+  baseURL: tOptional(tString),
   patterns: tArray(tObject({
     glob: tOptional(tString),
     regexSource: tOptional(tString),
@@ -1340,6 +1339,7 @@ scheme.PageSetNetworkInterceptionPatternsParams = tObject({
 });
 scheme.PageSetNetworkInterceptionPatternsResult = tOptional(tObject({}));
 scheme.PageSetWebSocketInterceptionPatternsParams = tObject({
+  baseURL: tOptional(tString),
   patterns: tArray(tObject({
     glob: tOptional(tString),
     regexSource: tOptional(tString),
@@ -2751,7 +2751,6 @@ scheme.AndroidDeviceLaunchBrowserParams = tObject({
   forcedColors: tOptional(tEnum(['active', 'none', 'no-override'])),
   acceptDownloads: tOptional(tEnum(['accept', 'deny', 'internal-browser-default'])),
   contrast: tOptional(tEnum(['no-preference', 'more', 'no-override'])),
-  baseURL: tOptional(tString),
   recordVideo: tOptional(tObject({
     dir: tString,
     size: tOptional(tObject({

@@ -51,6 +51,7 @@ export class HarRecorder implements HarTracerDelegate {
       recordRequestOverrides: true,
       waitForContentOnStop: true,
       urlFilter: urlFilterRe ?? options.urlGlob,
+      baseURL: options.baseURL,
     });
     this._zipFile = content === 'attach' || expectsZip ? new yazl.ZipFile() : null;
     this._tracer.start({ omitScripts: false });

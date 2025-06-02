@@ -24,6 +24,7 @@ import { mkdirIfNeeded } from './fileUtils';
 import { headersObjectToArray } from '../utils/isomorphic/headers';
 import { isString } from '../utils/isomorphic/rtti';
 import { TimeoutSettings } from './timeoutSettings';
+import { constructURLBasedOnBaseURL } from '../utils/isomorphic/urlMatch';
 
 import type { Playwright } from './playwright';
 import type { ClientCertificate, FilePayload, Headers, SetStorageState, StorageState, TimeoutOptions } from './types';
@@ -52,6 +53,7 @@ type NewContextOptions = Omit<channels.PlaywrightNewRequestOptions, 'extraHTTPHe
   extraHTTPHeaders?: Headers,
   storageState?: string | SetStorageState,
   clientCertificates?: ClientCertificate[];
+  baseURL?: string,
 };
 
 type RequestWithBodyOptions = Omit<FetchOptions, 'method'>;
@@ -81,6 +83,7 @@ export class APIRequest implements api.APIRequest {
     })).request);
     this._contexts.add(context);
     context._request = this;
+    context._baseURL = options.baseURL;
     context._timeoutSettings.setDefaultTimeout(options.timeout ?? this._playwright._defaultContextTimeout);
     context._tracing._tracesDir = this._playwright._defaultLaunchOptions?.tracesDir;
     await context._instrumentation.runAfterCreateRequestContext(context);
@@ -93,6 +96,7 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
   readonly _tracing: Tracing;
   private _closeReason: string | undefined;
   _timeoutSettings: TimeoutSettings;
+  _baseURL: string | undefined;
 
   static from(channel: channels.APIRequestContextChannel): APIRequestContext {
     return (channel as any)._object;
@@ -244,7 +248,7 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
         __testHookLookup: (options as any).__testHookLookup
       };
       const result = await this._channel.fetch({
-        url,
+        url: constructURLBasedOnBaseURL(this._baseURL, url),
         params: typeof options.params === 'object' ? objectToArray(options.params) : undefined,
         encodedParams,
         method,

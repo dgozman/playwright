@@ -45,6 +45,7 @@ type HarTracerOptions = {
   includeTraceInfo: boolean;
   recordRequestOverrides: boolean;
   waitForContentOnStop: boolean;
+  baseURL?: string;
   urlFilter?: string | RegExp;
   slimMode?: boolean;
   omitSecurityDetails?: boolean;
@@ -65,7 +66,6 @@ export class HarTracer {
   private _eventListeners: RegisteredListener[] = [];
   private _started = false;
   private _entrySymbol: symbol;
-  private _baseURL: string | undefined;
   private _page: Page | null;
 
   constructor(context: BrowserContext | APIRequestContext, page: Page | null, delegate: HarTracerDelegate, options: HarTracerOptions) {
@@ -82,7 +82,6 @@ export class HarTracer {
       options.omitPages = true;
     }
     this._entrySymbol = Symbol('requestHarEntry');
-    this._baseURL = context instanceof APIRequestContext ? context._defaultOptions().baseURL : context._options.baseURL;
   }
 
   start(options: { omitScripts: boolean }) {
@@ -112,7 +111,7 @@ export class HarTracer {
   }
 
   private _shouldIncludeEntryWithUrl(urlString: string) {
-    return !this._options.urlFilter || urlMatches(this._baseURL, urlString, this._options.urlFilter);
+    return !this._options.urlFilter || urlMatches(this._options.baseURL, urlString, this._options.urlFilter);
   }
 
   private _entryForRequest(request: network.Request | APIRequestEvent): har.Entry | undefined {

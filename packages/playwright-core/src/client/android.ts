@@ -265,7 +265,7 @@ export class AndroidDevice extends ChannelOwner<channels.AndroidDeviceChannel> i
     const selectors = this._android._playwright.selectors;
     selectors._contextsForSelectors.add(context);
     context.once(Events.BrowserContext.Close, () => selectors._contextsForSelectors.delete(context));
-    await context._initializeHarFromOptions(options.recordHar);
+    await context._initializeFromOptions(options);
     return context;
   }
 

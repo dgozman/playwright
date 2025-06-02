@@ -418,7 +418,7 @@ export function toHaveURL(
   if (typeof expected === 'function')
     return toHaveURLWithPredicate.call(this, page, expected, options);
 
-  const baseURL = (page.context() as any)._options.baseURL;
+  const baseURL = (page.context() as any)._baseURL;
   expected = typeof expected === 'string' ? constructURLBasedOnBaseURL(baseURL, expected) : expected;
   const locator = page.locator(':root') as LocatorEx;
   return toMatchText.call(this, 'toHaveURL', locator, 'Locator', async (isNot, timeout) => {

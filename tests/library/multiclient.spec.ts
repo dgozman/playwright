@@ -81,14 +81,19 @@ test('should connect two clients', async ({ connect, remoteServer, server }) => 
   const pageEventPromise = new Promise<Page>(f => contextB2.on('page', f));
   const pageA2 = await contextA2.newPage();
   const pageB2 = await pageEventPromise;
-  await pageA2.goto('/frames/frame.html');
-  await expect(pageB2).toHaveURL('/frames/frame.html');
+  // Client B respects baseURL.
+  await pageB2.goto('/empty.html');
+  await expect(pageB2).toHaveURL('/empty.html');
+  // Client A does not know about baseURL.
+  const error = await pageA2.goto('/frames/frame.html').catch(e => e);
+  expect(error.message).toContain('page.goto');
+  await expect(pageB2).toHaveURL('/empty.html');
 
   // Both contexts and pages should be still operational after any client disconnects.
   await disconnect(pageA1);
 
   await expect(pageB1).toHaveURL(server.EMPTY_PAGE);
-  await expect(pageB2).toHaveURL(server.PREFIX + '/frames/frame.html');
+  await expect(pageB2).toHaveURL('/empty.html');
 });
 
 test('should have separate default timeouts', async ({ twoPages }) => {

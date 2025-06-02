@@ -113,7 +113,7 @@ export class BrowserType extends ChannelOwner<channels.BrowserTypeChannel> imple
       const browser = Browser.from(result.browser);
       browser._connectToBrowserType(this, options, logger);
       const context = BrowserContext.from(result.context);
-      await context._initializeHarFromOptions(options.recordHar);
+      await context._initializeFromOptions(options);
       await this._instrumentation.runAfterCreateBrowserContext(context);
       return context;
     });

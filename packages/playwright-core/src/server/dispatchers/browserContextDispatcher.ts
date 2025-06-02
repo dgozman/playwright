@@ -50,13 +50,13 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   _type_BrowserContext = true;
   private _context: BrowserContext;
   private _subscriptions = new Set<channels.BrowserContextUpdateSubscriptionParams['event']>();
-  _webSocketInterceptionPatterns: channels.BrowserContextSetWebSocketInterceptionPatternsParams['patterns'] = [];
+  _webSocketInterceptionParams?: channels.BrowserContextSetWebSocketInterceptionPatternsParams;
   private _bindings: PageBinding[] = [];
   private _initScritps: InitScript[] = [];
   private _dialogHandler: (dialog: Dialog) => boolean;
   private _clockPaused = false;
   private _requestInterceptor: RouteHandler;
-  private _interceptionUrlMatchers: (string | RegExp)[] = [];
+  private _requestInterceptionMatcher?: (url: string) => boolean;
 
   static from(parentScope: DispatcherScope, context: BrowserContext): BrowserContextDispatcher {
     const result = parentScope.connection.existingDispatcher<BrowserContextDispatcher>(context);
@@ -79,7 +79,7 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     this.adopt(tracing);
 
     this._requestInterceptor = (route, request) => {
-      const matchesSome = this._interceptionUrlMatchers.some(urlMatch => urlMatches(this._context._options.baseURL, request.url(), urlMatch));
+      const matchesSome = this._requestInterceptionMatcher?.(request.url());
       // If there is already a dispatcher, that means we've already routed this request through page.
       // Client expects a single `route` event, either on the page or on the context, so we can just fallback here.
       const routeDispatcher = this.connection.existingDispatcher<RouteDispatcher>(route);
@@ -290,22 +290,23 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
   }
 
   async setNetworkInterceptionPatterns(params: channels.BrowserContextSetNetworkInterceptionPatternsParams): Promise<void> {
-    const hadMatchers = this._interceptionUrlMatchers.length > 0;
+    const hadMatchers = !!this._requestInterceptionMatcher;
     if (!params.patterns.length) {
       // Note: it is important to remove the interceptor when there are no patterns,
       // because that disables the slow-path interception in the browser itself.
       if (hadMatchers)
         await this._context.removeRequestInterceptor(this._requestInterceptor);
-      this._interceptionUrlMatchers = [];
+      this._requestInterceptionMatcher = undefined;
     } else {
-      this._interceptionUrlMatchers = params.patterns.map(pattern => pattern.regexSource ? new RegExp(pattern.regexSource, pattern.regexFlags!) : pattern.glob!);
+      const urlMatchers = params.patterns.map(pattern => pattern.regexSource ? new RegExp(pattern.regexSource, pattern.regexFlags!) : pattern.glob!);
+      this._requestInterceptionMatcher = url => urlMatchers.some(urlMatch => urlMatches(params.baseURL, url, urlMatch));
       if (!hadMatchers)
         await this._context.addRequestInterceptor(this._requestInterceptor);
     }
   }
 
   async setWebSocketInterceptionPatterns(params: channels.PageSetWebSocketInterceptionPatternsParams, metadata: CallMetadata): Promise<void> {
-    this._webSocketInterceptionPatterns = params.patterns;
+    this._webSocketInterceptionParams = params;
     if (params.patterns.length)
       await WebSocketRouteDispatcher.installIfNeeded(this.connection, this._context);
   }
@@ -398,9 +399,9 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     if (this._context.isClosingOrClosed())
       return;
 
-    // Cleanup properly and leave the page in a good state. Other clients may still connect and use it.
+    // Cleanup properly and leave the context in a good state. Other clients may still connect and use it.
     this._context.dialogManager.removeDialogHandler(this._dialogHandler);
-    this._interceptionUrlMatchers = [];
+    this._requestInterceptionMatcher = undefined;
     this._context.removeRequestInterceptor(this._requestInterceptor).catch(() => {});
     this._context.removeExposedBindings(this._bindings).catch(() => {});
     this._bindings = [];

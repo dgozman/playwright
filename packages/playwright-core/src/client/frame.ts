@@ -27,7 +27,7 @@ import { kLifecycleEvents } from './types';
 import { Waiter } from './waiter';
 import { assert } from '../utils/isomorphic/assert';
 import { getByAltTextSelector, getByLabelSelector, getByPlaceholderSelector, getByRoleSelector, getByTestIdSelector, getByTextSelector, getByTitleSelector } from '../utils/isomorphic/locatorUtils';
-import { urlMatches } from '../utils/isomorphic/urlMatch';
+import { constructURLBasedOnBaseURL, urlMatches } from '../utils/isomorphic/urlMatch';
 import { TimeoutSettings } from './timeoutSettings';
 
 import type { LocatorOptions } from './locator';
@@ -110,6 +110,7 @@ export class Frame extends ChannelOwner<channels.FrameChannel> implements api.Fr
 
   async goto(url: string, options: channels.FrameGotoOptions & TimeoutOptions = {}): Promise<network.Response | null> {
     const waitUntil = verifyLoadState('waitUntil', options.waitUntil === undefined ? 'load' : options.waitUntil);
+    url = constructURLBasedOnBaseURL(this._page?.context()._baseURL, url);
     return network.Response.fromNullable((await this._channel.goto({ url, ...options, waitUntil, timeout: this._navigationTimeout(options) })).response);
   }
 
@@ -138,7 +139,7 @@ export class Frame extends ChannelOwner<channels.FrameChannel> implements api.Fr
         if (event.error)
           return true;
         waiter.log(`  navigated to "${event.url}"`);
-        return urlMatches(this._page?.context()._options.baseURL, event.url, options.url);
+        return urlMatches(this._page?.context()._baseURL, event.url, options.url);
       });
       if (navigatedEvent.error) {
         const e = new Error(navigatedEvent.error);
@@ -177,7 +178,7 @@ export class Frame extends ChannelOwner<channels.FrameChannel> implements api.Fr
   }
 
   async waitForURL(url: URLMatch, options: { waitUntil?: LifecycleEvent, timeout?: number } = {}): Promise<void> {
-    if (urlMatches(this._page?.context()._options.baseURL, this.url(), url))
+    if (urlMatches(this._page?.context()._baseURL, this.url(), url))
       return await this.waitForLoadState(options.waitUntil, options);
 
     await this.waitForNavigation({ url, ...options });

@@ -267,7 +267,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     return this.frames().find(f => {
       if (name)
         return f.name() === name;
-      return urlMatches(this._browserContext._options.baseURL, f.url(), url);
+      return urlMatches(this._browserContext._baseURL, f.url(), url);
     }) || null;
   }
 
@@ -426,7 +426,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   async waitForRequest(urlOrPredicate: string | RegExp | ((r: Request) => boolean | Promise<boolean>), options: TimeoutOptions = {}): Promise<Request> {
     const predicate = async (request: Request) => {
       if (isString(urlOrPredicate) || isRegExp(urlOrPredicate))
-        return urlMatches(this._browserContext._options.baseURL, request.url(), urlOrPredicate);
+        return urlMatches(this._browserContext._baseURL, request.url(), urlOrPredicate);
       return await urlOrPredicate(request);
     };
     const trimmedUrl = trimUrl(urlOrPredicate);
@@ -437,7 +437,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   async waitForResponse(urlOrPredicate: string | RegExp | ((r: Response) => boolean | Promise<boolean>), options: TimeoutOptions = {}): Promise<Response> {
     const predicate = async (response: Response) => {
       if (isString(urlOrPredicate) || isRegExp(urlOrPredicate))
-        return urlMatches(this._browserContext._options.baseURL, response.url(), urlOrPredicate);
+        return urlMatches(this._browserContext._baseURL, response.url(), urlOrPredicate);
       return await urlOrPredicate(response);
     };
     const trimmedUrl = trimUrl(urlOrPredicate);
@@ -515,7 +515,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   }
 
   async route(url: URLMatch, handler: RouteHandlerCallback, options: { times?: number } = {}): Promise<void> {
-    this._routes.unshift(new RouteHandler(this._platform, this._browserContext._options.baseURL, url, handler, options.times));
+    this._routes.unshift(new RouteHandler(this._platform, this._browserContext._baseURL, url, handler, options.times));
     await this._updateInterceptionPatterns();
   }
 
@@ -533,7 +533,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   }
 
   async routeWebSocket(url: URLMatch, handler: WebSocketRouteHandlerCallback): Promise<void> {
-    this._webSocketRoutes.unshift(new WebSocketRouteHandler(this._browserContext._options.baseURL, url, handler));
+    this._webSocketRoutes.unshift(new WebSocketRouteHandler(this._browserContext._baseURL, url, handler));
     await this._updateWebSocketInterceptionPatterns();
   }
 
@@ -570,12 +570,12 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
 
   private async _updateInterceptionPatterns() {
     const patterns = RouteHandler.prepareInterceptionPatterns(this._routes);
-    await this._channel.setNetworkInterceptionPatterns({ patterns });
+    await this._channel.setNetworkInterceptionPatterns({ baseURL: this._browserContext._baseURL, patterns });
   }
 
   private async _updateWebSocketInterceptionPatterns() {
     const patterns = WebSocketRouteHandler.prepareInterceptionPatterns(this._webSocketRoutes);
-    await this._channel.setWebSocketInterceptionPatterns({ patterns });
+    await this._channel.setWebSocketInterceptionPatterns({ baseURL: this._browserContext._baseURL, patterns });
   }
 
   async screenshot(options: Omit<channels.PageScreenshotOptions, 'mask'> & TimeoutOptions & { path?: string, mask?: api.Locator[] } = {}): Promise<Buffer> {

@@ -20,7 +20,7 @@ import { Transform, pipeline } from 'stream';
 import { TLSSocket } from 'tls';
 import * as zlib from 'zlib';
 
-import { assert, constructURLBasedOnBaseURL, createProxyAgent, eventsHelper, monotonicTime  } from '../utils';
+import { assert, createProxyAgent, eventsHelper, monotonicTime  } from '../utils';
 import { createGuid } from './utils/crypto';
 import { getUserAgent } from './utils/userAgent';
 import { BrowserContext, verifyClientCertificates } from './browserContext';
@@ -53,7 +53,6 @@ type FetchRequestOptions = {
   proxy?: ProxySettings;
   ignoreHTTPSErrors?: boolean;
   maxRedirects?: number;
-  baseURL?: string;
   clientCertificates?: types.BrowserContextOptions['clientCertificates'];
 };
 
@@ -162,7 +161,7 @@ export abstract class APIRequestContext extends SdkObject {
         setHeader(headers, name, value);
     }
 
-    const requestUrl = new URL(constructURLBasedOnBaseURL(defaults.baseURL, params.url));
+    const requestUrl = new URL(params.url);
     if (params.encodedParams) {
       requestUrl.search = params.encodedParams;
     } else if (params.params) {
@@ -615,7 +614,6 @@ export class BrowserContextAPIRequestContext extends APIRequestContext {
       httpCredentials: this._context._options.httpCredentials,
       proxy: this._context._options.proxy || this._context._browser.options.proxy,
       ignoreHTTPSErrors: this._context._options.ignoreHTTPSErrors,
-      baseURL: this._context._options.baseURL,
       clientCertificates: this._context._options.clientCertificates,
     };
   }
@@ -649,7 +647,6 @@ export class GlobalAPIRequestContext extends APIRequestContext {
     }
     verifyClientCertificates(options.clientCertificates);
     this._options = {
-      baseURL: options.baseURL,
       userAgent: options.userAgent || getUserAgent(),
       extraHTTPHeaders: options.extraHTTPHeaders,
       failOnStatusCode: !!options.failOnStatusCode,

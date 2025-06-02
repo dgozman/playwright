@@ -330,6 +330,7 @@ export type RecordHarOptions = {
   urlGlob?: string,
   urlRegexSource?: string,
   urlRegexFlags?: string,
+  baseURL?: string,
 };
 
 export type FormField = {
@@ -636,7 +637,6 @@ export interface PlaywrightChannel extends PlaywrightEventTarget, Channel {
   newRequest(params: PlaywrightNewRequestParams, metadata?: CallMetadata): Promise<PlaywrightNewRequestResult>;
 }
 export type PlaywrightNewRequestParams = {
-  baseURL?: string,
   userAgent?: string,
   ignoreHTTPSErrors?: boolean,
   extraHTTPHeaders?: NameValue[],
@@ -668,7 +668,6 @@ export type PlaywrightNewRequestParams = {
   tracesDir?: string,
 };
 export type PlaywrightNewRequestOptions = {
-  baseURL?: string,
   userAgent?: string,
   ignoreHTTPSErrors?: boolean,
   extraHTTPHeaders?: NameValue[],
@@ -1037,7 +1036,6 @@ export type BrowserTypeLaunchPersistentContextParams = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -1120,7 +1118,6 @@ export type BrowserTypeLaunchPersistentContextOptions = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -1241,7 +1238,6 @@ export type BrowserNewContextParams = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -1309,7 +1305,6 @@ export type BrowserNewContextOptions = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -1380,7 +1375,6 @@ export type BrowserNewContextForReuseParams = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -1448,7 +1442,6 @@ export type BrowserNewContextForReuseOptions = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -1583,7 +1576,6 @@ export type BrowserContextInitializer = {
     forcedColors?: 'active' | 'none' | 'no-override',
     acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
     contrast?: 'no-preference' | 'more' | 'no-override',
-    baseURL?: string,
     recordVideo?: {
       dir: string,
       size?: {
@@ -1838,6 +1830,7 @@ export type BrowserContextSetHTTPCredentialsOptions = {
 };
 export type BrowserContextSetHTTPCredentialsResult = void;
 export type BrowserContextSetNetworkInterceptionPatternsParams = {
+  baseURL?: string,
   patterns: {
     glob?: string,
     regexSource?: string,
@@ -1845,10 +1838,11 @@ export type BrowserContextSetNetworkInterceptionPatternsParams = {
   }[],
 };
 export type BrowserContextSetNetworkInterceptionPatternsOptions = {
-
+  baseURL?: string,
 };
 export type BrowserContextSetNetworkInterceptionPatternsResult = void;
 export type BrowserContextSetWebSocketInterceptionPatternsParams = {
+  baseURL?: string,
   patterns: {
     glob?: string,
     regexSource?: string,
@@ -1856,7 +1850,7 @@ export type BrowserContextSetWebSocketInterceptionPatternsParams = {
   }[],
 };
 export type BrowserContextSetWebSocketInterceptionPatternsOptions = {
-
+  baseURL?: string,
 };
 export type BrowserContextSetWebSocketInterceptionPatternsResult = void;
 export type BrowserContextSetOfflineParams = {
@@ -2341,6 +2335,7 @@ export type PageSetExtraHTTPHeadersOptions = {
 };
 export type PageSetExtraHTTPHeadersResult = void;
 export type PageSetNetworkInterceptionPatternsParams = {
+  baseURL?: string,
   patterns: {
     glob?: string,
     regexSource?: string,
@@ -2348,10 +2343,11 @@ export type PageSetNetworkInterceptionPatternsParams = {
   }[],
 };
 export type PageSetNetworkInterceptionPatternsOptions = {
-
+  baseURL?: string,
 };
 export type PageSetNetworkInterceptionPatternsResult = void;
 export type PageSetWebSocketInterceptionPatternsParams = {
+  baseURL?: string,
   patterns: {
     glob?: string,
     regexSource?: string,
@@ -2359,7 +2355,7 @@ export type PageSetWebSocketInterceptionPatternsParams = {
   }[],
 };
 export type PageSetWebSocketInterceptionPatternsOptions = {
-
+  baseURL?: string,
 };
 export type PageSetWebSocketInterceptionPatternsResult = void;
 export type PageSetViewportSizeParams = {
@@ -4807,7 +4803,6 @@ export type AndroidDeviceLaunchBrowserParams = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {
@@ -4873,7 +4868,6 @@ export type AndroidDeviceLaunchBrowserOptions = {
   forcedColors?: 'active' | 'none' | 'no-override',
   acceptDownloads?: 'accept' | 'deny' | 'internal-browser-default',
   contrast?: 'no-preference' | 'more' | 'no-override',
-  baseURL?: string,
   recordVideo?: {
     dir: string,
     size?: {

@@ -54,6 +54,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   _webSocketRoutes: network.WebSocketRouteHandler[] = [];
   // Browser is null for browser contexts created outside of normal browser, e.g. android or electron.
   _browser: Browser | null = null;
+  _baseURL: string | undefined;
   readonly _bindings = new Map<string, (source: structs.BindingSource, ...args: any[]) => any>();
   _timeoutSettings: TimeoutSettings;
   _ownerPage: Page | undefined;
@@ -151,15 +152,17 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     ]));
   }
 
-  async _initializeHarFromOptions(recordHar: BrowserContextOptions['recordHar']) {
-    if (!recordHar)
-      return;
-    const defaultContent = recordHar.path.endsWith('.zip') ? 'attach' : 'embed';
-    await this._recordIntoHAR(recordHar.path, null, {
-      url: recordHar.urlFilter,
-      updateContent: recordHar.content ?? (recordHar.omitContent ? 'omit' : defaultContent),
-      updateMode: recordHar.mode ?? 'full',
-    });
+  async _initializeFromOptions(options: BrowserContextOptions) {
+    this._baseURL = options.baseURL;
+    this.request._baseURL = options.baseURL;
+    if (options.recordHar) {
+      const defaultContent = options.recordHar.path.endsWith('.zip') ? 'attach' : 'embed';
+      await this._recordIntoHAR(options.recordHar.path, null, {
+        url: options.recordHar.urlFilter,
+        updateContent: options.recordHar.content ?? (options.recordHar.omitContent ? 'omit' : defaultContent),
+        updateMode: options.recordHar.mode ?? 'full',
+      });
+    }
   }
 
   private _onPage(page: Page): void {
@@ -333,12 +336,12 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   async route(url: URLMatch, handler: network.RouteHandlerCallback, options: { times?: number } = {}): Promise<void> {
-    this._routes.unshift(new network.RouteHandler(this._platform, this._options.baseURL, url, handler, options.times));
+    this._routes.unshift(new network.RouteHandler(this._platform, this._baseURL, url, handler, options.times));
     await this._updateInterceptionPatterns();
   }
 
   async routeWebSocket(url: URLMatch, handler: network.WebSocketRouteHandlerCallback): Promise<void> {
-    this._webSocketRoutes.unshift(new network.WebSocketRouteHandler(this._options.baseURL, url, handler));
+    this._webSocketRoutes.unshift(new network.WebSocketRouteHandler(this._baseURL, url, handler));
     await this._updateWebSocketInterceptionPatterns();
   }
 
@@ -351,6 +354,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
         urlGlob: isString(options.url) ? options.url : undefined,
         urlRegexSource: isRegExp(options.url) ? options.url.source : undefined,
         urlRegexFlags: isRegExp(options.url) ? options.url.flags : undefined,
+        baseURL: this._baseURL,
         mode: options.updateMode ?? 'minimal',
       },
     });
@@ -403,12 +407,12 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
 
   private async _updateInterceptionPatterns() {
     const patterns = network.RouteHandler.prepareInterceptionPatterns(this._routes);
-    await this._channel.setNetworkInterceptionPatterns({ patterns });
+    await this._channel.setNetworkInterceptionPatterns({ baseURL: this._baseURL, patterns });
   }
 
   private async _updateWebSocketInterceptionPatterns() {
     const patterns = network.WebSocketRouteHandler.prepareInterceptionPatterns(this._webSocketRoutes);
-    await this._channel.setWebSocketInterceptionPatterns({ patterns });
+    await this._channel.setWebSocketInterceptionPatterns({ baseURL: this._baseURL, patterns });
   }
 
   _effectiveCloseReason(): string | undefined {

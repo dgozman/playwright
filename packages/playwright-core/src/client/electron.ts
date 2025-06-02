@@ -40,6 +40,7 @@ type ElectronOptions = Omit<channels.ElectronLaunchOptions, 'env'|'extraHTTPHead
   colorScheme?: 'dark' | 'light' | 'no-preference' | null,
   acceptDownloads?: boolean,
   timeout?: number,
+  baseURL?: string,
 };
 
 type ElectronAppType = typeof import('electron');
@@ -66,7 +67,7 @@ export class Electron extends ChannelOwner<channels.ElectronChannel> implements 
     const app = ElectronApplication.from((await this._channel.launch(params)).electronApplication);
     this._playwright.selectors._contextsForSelectors.add(app._context);
     app.once(Events.ElectronApplication.Close, () => this._playwright.selectors._contextsForSelectors.delete(app._context));
-    await app._context._initializeHarFromOptions(options.recordHar);
+    await app._context._initializeFromOptions(options);
     app._context.tracing._tracesDir = options.tracesDir;
     return app;
   }

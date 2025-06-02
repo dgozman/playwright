@@ -66,9 +66,9 @@ export class WebSocketRouteDispatcher extends Dispatcher<{ guid: string }, chann
           const contextDispatcher = connection.existingDispatcher<BrowserContextDispatcher>(context);
           const pageDispatcher = contextDispatcher ? PageDispatcher.fromNullable(contextDispatcher, source.page) : undefined;
           let scope: PageDispatcher | BrowserContextDispatcher | undefined;
-          if (pageDispatcher && matchesPattern(pageDispatcher, context._options.baseURL, payload.url))
+          if (pageDispatcher && matchesPattern(pageDispatcher, payload.url))
             scope = pageDispatcher;
-          else if (contextDispatcher && matchesPattern(contextDispatcher, context._options.baseURL, payload.url))
+          else if (contextDispatcher && matchesPattern(contextDispatcher, payload.url))
             scope = contextDispatcher;
           if (scope) {
             new WebSocketRouteDispatcher(scope, payload.id, payload.url, source.frame);
@@ -146,10 +146,11 @@ export class WebSocketRouteDispatcher extends Dispatcher<{ guid: string }, chann
   }
 }
 
-function matchesPattern(dispatcher: PageDispatcher | BrowserContextDispatcher, baseURL: string | undefined, url: string) {
-  for (const pattern of dispatcher._webSocketInterceptionPatterns || []) {
+function matchesPattern(dispatcher: PageDispatcher | BrowserContextDispatcher, url: string) {
+  const params = dispatcher._webSocketInterceptionParams;
+  for (const pattern of params?.patterns || []) {
     const urlMatch = pattern.regexSource ? new RegExp(pattern.regexSource, pattern.regexFlags) : pattern.glob;
-    if (urlMatches(baseURL, url, urlMatch, true))
+    if (urlMatches(params?.baseURL, url, urlMatch, true))
       return true;
   }
   return false;
