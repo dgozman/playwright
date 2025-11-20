@@ -233,6 +233,38 @@ Logger sink for Playwright logging. Optional.
 Maximum time in milliseconds to wait for the connection to be established. Defaults to
 `30000` (30 seconds). Pass `0` to disable timeout.
 
+
+## async method: BrowserType.connectToWorker
+* since: v1.58
+- returns: <[Worker]>
+
+This method attaches Playwright to an existing JavaScript engine exposing Chrome DevTools Protocol, for example to a Node.js process or an Electron application.
+
+:::note
+This is only supported on `chromium`.
+:::
+
+**Usage**
+
+```js
+const worker = await playwright.chromium.connectToWorker('http://localhost:9229');
+const global = await worker.evaluate(() => globalThis);
+```
+
+### param: BrowserType.connectToWorker.endpointURL
+* since: v1.58
+- `endpointURL` <[string]>
+
+A CDP websocket endpoint or http url to connect to. For example `http://localhost:9229/` or `ws://127.0.0.1:9229/387adf4c-243f-4051-a181-46798f4a46f4`.
+
+### option: BrowserType.connectToWorker.timeout
+* since: v1.58
+- `timeout` <[float]>
+
+Maximum time in milliseconds to wait for the connection to be established. Defaults to
+`30000` (30 seconds). Pass `0` to disable timeout.
+
+
 ## method: BrowserType.executablePath
 * since: v1.8
 - returns: <[string]>

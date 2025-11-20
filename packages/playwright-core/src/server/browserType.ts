@@ -36,6 +36,7 @@ import { RecentLogsCollector } from './utils/debugLogger';
 
 import type { Browser, BrowserOptions, BrowserProcess } from './browser';
 import type { BrowserContext } from './browserContext';
+import type { Worker } from './page';
 import type { Progress } from './progress';
 import type { ProtocolError } from './protocolError';
 import type { BrowserName } from './registry';
@@ -285,6 +286,10 @@ export abstract class BrowserType extends SdkObject {
   }
 
   async connectOverCDP(progress: Progress, endpointURL: string, options: { slowMo?: number, timeout?: number, headers?: types.HeadersArray }): Promise<Browser> {
+    throw new Error('CDP connections are only supported by Chromium');
+  }
+
+  async connectToWorker(progress: Progress, endpointURL: string): Promise<Worker> {
     throw new Error('CDP connections are only supported by Chromium');
   }
 

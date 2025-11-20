@@ -21,7 +21,7 @@ import path from 'path';
 
 import { chromiumSwitches } from './chromiumSwitches';
 import { CRBrowser } from './crBrowser';
-import { kBrowserCloseMessageId } from './crConnection';
+import { CRConnection, kBrowserCloseMessageId } from './crConnection';
 import { debugMode, headersArrayToObject, headersObjectToArray, } from '../../utils';
 import { wrapInASCIIBox } from '../utils/ascii';
 import { RecentLogsCollector } from '../utils/debugLogger';
@@ -37,6 +37,7 @@ import { CRDevTools } from './crDevTools';
 import { Browser } from '../browser';
 import { removeFolders } from '../utils/fileUtils';
 import { gracefullyCloseSet } from '../utils/processLauncher';
+import { Worker } from '../page';
 
 import type { HTTPRequestParams } from '../utils/network';
 import type { BrowserOptions, BrowserProcess } from '../browser';
@@ -49,6 +50,9 @@ import type * as types from '../types';
 import type * as channels from '@protocol/channels';
 import type http from 'http';
 import type stream from 'stream';
+import { createHandle, CRExecutionContext } from './crExecutionContext';
+import { ConsoleMessage } from '../console';
+import { toConsoleMessageLocation } from './crProtocolHelper';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -130,6 +134,31 @@ export class Chromium extends BrowserType {
       return browser;
     } catch (error) {
       await doClose().catch(() => {});
+      throw error;
+    }
+  }
+
+  override async connectToWorker(progress: Progress, endpointURL: string) {
+    const wsEndpoint = await urlToWSEndpoint(progress, endpointURL, {});
+    const transport = await WebSocketTransport.connect(progress, wsEndpoint);
+    try {
+      const connection = new CRConnection(this, transport, helper.debugProtocolLogger(), new RecentLogsCollector());
+      const session = connection.rootSession;
+      const worker = new Worker(this, '', () => transport.closeAndWait());
+      session.once('Runtime.executionContextCreated', event => worker.createExecutionContext(new CRExecutionContext(session, event.context)));
+      session.on('Runtime.consoleAPICalled', event => {
+        if (!worker.existingExecutionContext)
+          return;
+        const args = event.args.map(o => createHandle(worker.existingExecutionContext!, o));
+        const message = new ConsoleMessage(null, worker, event.type, undefined, args, toConsoleMessageLocation(event.stackTrace));
+        worker.emit(Worker.Events.Console, message);
+      });
+      session._sendMayFail('Runtime.enable');
+      session._sendMayFail('Runtime.runIfWaitingForDebugger');
+      worker.workerScriptLoaded();
+      return worker;
+    } catch (error) {
+      await transport.closeAndWait().catch(() => {});
       throw error;
     }
   }

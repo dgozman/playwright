@@ -864,18 +864,23 @@ export class Page extends SdkObject {
 
 export class Worker extends SdkObject {
   static Events = {
+    Console: 'console',
     Close: 'close',
   };
 
   readonly url: string;
+  private _onDisconnect?: () => Promise<void>;
   private _executionContextPromise = new ManualPromise<js.ExecutionContext>();
   private _workerScriptLoaded = false;
   existingExecutionContext: js.ExecutionContext | null = null;
   readonly openScope = new LongStandingScope();
+  closeReason: string | undefined;
 
-  constructor(parent: SdkObject, url: string) {
+  constructor(parent: SdkObject, url: string, onDisconnect?: () => Promise<void>) {
     super(parent, 'worker');
+    this.attribution.worker = this;
     this.url = url;
+    this._onDisconnect = onDisconnect;
   }
 
   createExecutionContext(delegate: js.ExecutionContextDelegate) {
@@ -904,6 +909,13 @@ export class Worker extends SdkObject {
 
   async evaluateExpressionHandle(expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
     return js.evaluateExpression(await this._executionContextPromise, expression, { returnByValue: false, isFunction }, arg);
+  }
+
+  async disconnect(options: { reason?: string } = {}) {
+    if (!this._onDisconnect)
+      throw new Error('Cannot disconnect from this worker');
+    this.closeReason = options.reason;
+    await this._onDisconnect();
   }
 }
 

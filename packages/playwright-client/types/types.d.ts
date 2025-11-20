@@ -10387,6 +10387,19 @@ export interface Worker {
    */
   prependListener(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
 
+  /**
+   * Disconnects from a worker that was connected through
+   * [browserType.connectToWorker(endpointURL[, options])](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-to-worker).
+   * Calling this method on any other worker will throw.
+   * @param options
+   */
+  disconnect(options?: {
+    /**
+     * The reason to be reported to the operations interrupted by the worker disconnect.
+     */
+    reason?: string;
+  }): Promise<void>;
+
   url(): string;
 
   /**
@@ -14801,6 +14814,31 @@ export interface BrowserType<Unused = {}> {
    * @param options
    */
   connect(options: ConnectOptions & { wsEndpoint?: string }): Promise<Browser>;
+  /**
+   * This method attaches Playwright to an existing JavaScript engine exposing Chrome DevTools Protocol, for example to
+   * a Node.js process or an Electron application.
+   *
+   * **NOTE** This is only supported on `chromium`.
+   *
+   * **Usage**
+   *
+   * ```js
+   * const worker = await playwright.chromium.connectToWorker('http://localhost:9229');
+   * const global = await worker.evaluate(() => globalThis);
+   * ```
+   *
+   * @param endpointURL A CDP websocket endpoint or http url to connect to. For example `http://localhost:9229/` or
+   * `ws://127.0.0.1:9229/387adf4c-243f-4051-a181-46798f4a46f4`.
+   * @param options
+   */
+  connectToWorker(endpointURL: string, options?: {
+    /**
+     * Maximum time in milliseconds to wait for the connection to be established. Defaults to `30000` (30 seconds). Pass
+     * `0` to disable timeout.
+     */
+    timeout?: number;
+  }): Promise<Worker>;
+
   /**
    * A path where Playwright expects to find a bundled browser executable.
    */

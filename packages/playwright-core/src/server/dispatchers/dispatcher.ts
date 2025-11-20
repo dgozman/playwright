@@ -418,7 +418,8 @@ export class DispatcherConnection {
 }
 
 function closeReason(sdkObject: SdkObject): string | undefined {
-  return sdkObject.attribution.page?.closeReason ||
+  return sdkObject.attribution.worker?.closeReason ||
+    sdkObject.attribution.page?.closeReason ||
     sdkObject.attribution.context?._closeReason ||
     sdkObject.attribution.browser?._closeReason;
 }

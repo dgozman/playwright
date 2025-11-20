@@ -25,7 +25,7 @@ import type { Dialog } from './dialog';
 import type { Download } from './download';
 import type { APIRequestContext } from './fetch';
 import type { Frame } from './frames';
-import type { Page } from './page';
+import type { Page, Worker } from './page';
 import type { Playwright } from './playwright';
 import type { CallMetadata } from '@protocol/callMetadata';
 export type { CallMetadata } from '@protocol/callMetadata';
@@ -38,6 +38,7 @@ export type Attribution = {
   context?: BrowserContext | APIRequestContext;
   page?: Page;
   frame?: Frame;
+  worker?: Worker;
 };
 
 export class SdkObject extends EventEmitter {
