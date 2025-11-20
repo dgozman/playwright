@@ -63,11 +63,10 @@ test('should fire close event when the app quits itself', async ({ launchElectro
     await electronApp.evaluate(({ app }) => app.quit());
     await waitForAppClose;
   }
-  events.sort(); // we don't care about the order
-  expect(events).toEqual(['application(close)', 'context(close)', 'process(exit)']);
+  await expect.poll(() => events.toSorted()).toEqual(['application(close)', 'context(close)', 'process(exit)']);
   // Give it some time to fire more events - there should not be any.
   await new Promise(f => setTimeout(f, 1000));
-  expect(events).toEqual(['application(close)', 'context(close)', 'process(exit)']);
+  expect(events.toSorted()).toEqual(['application(close)', 'context(close)', 'process(exit)']);
 });
 
 test('should fire console events', async ({ launchElectronApp }) => {

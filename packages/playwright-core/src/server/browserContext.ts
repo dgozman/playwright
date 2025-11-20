@@ -495,6 +495,7 @@ export abstract class BrowserContext extends SdkObject {
     await Promise.all(this._tempDirs.map(async dir => await fs.promises.unlink(dir).catch(e => {})));
   }
 
+  // TODO: remove this one.
   setCustomCloseHandler(handler: (() => Promise<any>) | undefined) {
     this._customCloseHandler = handler;
   }

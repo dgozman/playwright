@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-// No dependencies as it is used from the Electron loader.
+// No dependencies please!
 
 const disabledFeatures = (assistantMode?: boolean) => [
   // See https://github.com/microsoft/playwright/pull/10380

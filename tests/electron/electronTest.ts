@@ -23,6 +23,8 @@ import type { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
 import type { TraceViewerFixtures } from '../config/traceViewerFixtures';
 import { traceViewerFixtures } from '../config/traceViewerFixtures';
 import { removeFolders } from '../../packages/playwright-core/lib/server/utils/fileUtils';
+import { electron } from '../../packages/playwright-electron';
+
 export { expect } from '@playwright/test';
 
 type ElectronTestFixtures = PageTestFixtures & {
@@ -53,13 +55,13 @@ export const electronTest = baseTest.extend<TraceViewerFixtures>(traceViewerFixt
     await removeFolders(dirs);
   },
 
-  launchElectronApp: async ({ playwright, createUserDataDir }, use) => {
+  launchElectronApp: async ({ createUserDataDir }, use) => {
     // This env prevents 'Electron Security Policy' console message.
     process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
     const apps: ElectronApplication[] = [];
     await use(async (appFile: string, args: string[] = [], options?: Parameters<Electron['launch']>[0]) => {
       const userDataDir = await createUserDataDir();
-      const app = await playwright._electron.launch({
+      const app = await electron.launch({
         ...options,
         args: [path.join(__dirname, appFile), ...args],
         env: {
