@@ -25,16 +25,15 @@ import { removeFolders } from '@utils/fileUtils';
 
 import { Dispatcher  } from './dispatcher';
 import { FailureTracker } from './failureTracker';
-import { collectProjectsAndTestFiles, createRootSuite, loadFileSuites, loadGlobalHook, loadTestList } from './loadUtils';
-import { buildDependentProjects, buildTeardownToSetupsMap, filterProjects } from './projectUtils';
+import { Filter } from './filter';
+import { collectProjectsAndTestFiles, createRootSuite, loadFileSuites, loadGlobalHook } from './loadUtils';
+import { buildDependentProjects, buildTeardownToSetupsMap } from './projectUtils';
 import { applySuggestedRebaselines, clearSuggestedRebaselines } from './rebase';
 import { TaskRunner } from './taskRunner';
-import { detectChangedTestFiles } from './vcs';
 import { Suite } from '../common/test';
 import { createTestGroups } from '../runner/testGroups';
 import { cacheDir } from '../transform/compilationCache';
-import { createTitleMatcher, forceRegExp, removeDirAndLogToConsole } from '../util';
-import { createFiltersFromArguments } from '../common/suiteUtils';
+import { removeDirAndLogToConsole } from '../util';
 
 import type { TestGroup } from '../runner/testGroups';
 import type { EnvByProjectId } from './dispatcher';
@@ -42,6 +41,7 @@ import type { TestRunnerPluginRegistration } from '../plugins';
 import type { Task } from './taskRunner';
 import type { FullResult } from '../../types/testReporter';
 import type { FullConfigInternal, FullProjectInternal } from '../common/config';
+import type { FilterOptions } from './filter';
 import type { InternalReporter } from '../reporters/internalReporter';
 
 const readDirAsync = promisify(fs.readdir);
@@ -59,6 +59,7 @@ type Phase = {
 
 export class TestRun {
   readonly config: FullConfigInternal;
+  readonly filter: Filter;
   readonly reporter: InternalReporter;
   readonly failureTracker: FailureTracker;
   rootSuite: Suite | undefined = undefined;
@@ -67,8 +68,9 @@ export class TestRun {
   projectSuites: Map<FullProjectInternal, Suite[]> = new Map();
   topLevelProjects: FullProjectInternal[] = [];
 
-  constructor(config: FullConfigInternal, reporter: InternalReporter, options?: { pauseOnError?: boolean, pauseAtEnd?: boolean }) {
+  constructor(config: FullConfigInternal, filterOptions: FilterOptions, reporter: InternalReporter, options?: { pauseOnError?: boolean, pauseAtEnd?: boolean }) {
     this.config = config;
+    this.filter = new Filter(config, filterOptions);
     this.reporter = reporter;
     this.failureTracker = new FailureTracker(config, options);
   }
@@ -209,10 +211,9 @@ function createGlobalTeardownTask(file: string, config: FullConfigInternal): Tas
 function createRemoveOutputDirsTask(): Task<TestRun> {
   return {
     title: 'clear output',
-    setup: async ({ config }) => {
+    setup: async ({ filter }) => {
       const outputDirs = new Set<string>();
-      const projects = filterProjects(config.projects, config.cliProjectFilter);
-      projects.forEach(p => outputDirs.add(p.project.outputDir));
+      filter.filteredProjects.forEach(p => outputDirs.add(p.project.outputDir));
 
       await Promise.all(Array.from(outputDirs).map(outputDir => removeFolders([outputDir]).then(async ([error]) => {
         if (!error)
@@ -260,66 +261,26 @@ export function createLoadTask(mode: 'out-of-process' | 'in-process', options: {
   return {
     title: 'load tests',
     setup: async (testRun, errors, softErrors) => {
-      if (testRun.config.cliArgs.length) {
-        const { testFilter, fileFilter } = createFiltersFromArguments(testRun.config.cliArgs);
-        testRun.config.loadFileFilters.push(fileFilter);
-        testRun.config.preOnlyTestFilters.push(testFilter);
-      }
+      const filter = testRun.filter;
 
-      if (testRun.config.cliTestList) {
-        const { testFilter, fileFilter } = await loadTestList(testRun.config, testRun.config.cliTestList);
-        testRun.config.preOnlyTestFilters.push(testFilter);
-        testRun.config.loadFileFilters.push(fileFilter);
-      }
-
-      if (testRun.config.cliTestListInvert) {
-        // Note: invert list does not mean we can filter files. For example, the following invert list
-        // can still run tests from foo.spec.ts:
-        //
-        // foo.spec.ts > some test
-        const { testFilter } = await loadTestList(testRun.config, testRun.config.cliTestListInvert);
-        testRun.config.preOnlyTestFilters.push(test => !testFilter(test));
-      }
-
-      if (testRun.config.cliGrep || testRun.config.cliGrepInvert) {
-        const grepMatcher = testRun.config.cliGrep ? createTitleMatcher(forceRegExp(testRun.config.cliGrep)) : () => true;
-        const grepInvertMatcher = testRun.config.cliGrepInvert ? createTitleMatcher(forceRegExp(testRun.config.cliGrepInvert)) : () => false;
-        testRun.config.preOnlyTestFilters.push(test => {
-          const grepTitle = test._grepTitleWithTags();
-          return !grepInvertMatcher(grepTitle) && grepMatcher(grepTitle);
-        });
-      }
+      await filter.loadFileFilters(testRun.config);
 
       await collectProjectsAndTestFiles(testRun, !!options.doNotRunDepsOutsideProjectFilter);
       await loadFileSuites(testRun, mode, options.failOnLoadErrors ? errors : softErrors);
 
-      if (testRun.config.cliOnlyChanged || options.populateDependencies) {
+      if (options.populateDependencies) {
         for (const plugin of testRun.config.plugins)
           await plugin.instance?.populateDependencies?.();
       }
 
-      if (testRun.config.cliOnlyChanged) {
-        const changedFiles = await detectChangedTestFiles(testRun.config.cliOnlyChanged, testRun.config.configDir);
-        testRun.config.preOnlyTestFilters.push(test => changedFiles.has(test.location.file));
-      }
+      await filter.loadTestFilters(testRun.config);
 
       const { rootSuite, topLevelProjects } = await createRootSuite(testRun, options.failOnLoadErrors ? errors : softErrors, !!options.filterOnly);
       testRun.rootSuite = rootSuite;
       testRun.failureTracker.onRootSuite(rootSuite, topLevelProjects);
       // Fail when no tests.
-      if (options.failOnLoadErrors && !testRun.rootSuite.allTests().length
-          && !testRun.config.cliPassWithNoTests
-          && !testRun.config.config.shard && !testRun.config.cliOnlyChanged
-          && !testRun.config.cliTestList && !testRun.config.cliTestListInvert) {
-        if (testRun.config.cliArgs.length) {
-          throw new Error([
-            `No tests found.`,
-            `Make sure that arguments are regular expressions matching test files.`,
-            `You may need to escape symbols like "$" or "*" and quote the arguments.`,
-          ].join('\n'));
-        }
-        throw new Error(`No tests found`);
-      }
+      if (options.failOnLoadErrors && !testRun.rootSuite.allTests().length && !testRun.config.config.shard)
+        filter.throwIfNoTestsFound();
     },
   };
 }
@@ -330,8 +291,8 @@ export function createApplyRebaselinesTask(): Task<TestRun> {
     setup: async () => {
       clearSuggestedRebaselines();
     },
-    teardown: async ({ config, reporter }) => {
-      await applySuggestedRebaselines(config, reporter);
+    teardown: async ({ config, filter, reporter }) => {
+      await applySuggestedRebaselines(config, filter.filteredProjects, reporter);
     },
   };
 }

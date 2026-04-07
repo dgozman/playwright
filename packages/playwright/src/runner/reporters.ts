@@ -33,10 +33,12 @@ import { wrapReporterAsV2 } from '../reporters/reporterV2';
 import type { ReporterDescription } from '../../types/test';
 import type { TestError } from '../../types/testReporter';
 import type { BuiltInReporter, FullConfigInternal } from '../common/config';
+import type { FilterOptions } from './filter';
 import type { CommonReporterOptions, Screen } from '../reporters/base';
 import type { ReporterV2 } from '../reporters/reporterV2';
 
-export async function createReporters(config: FullConfigInternal, mode: 'list' | 'test' | 'merge', descriptions?: ReporterDescription[]): Promise<ReporterV2[]> {
+export async function createReporters(config: FullConfigInternal, filterOptions: FilterOptions, mode: 'list' | 'test' | 'merge', descriptions?: ReporterDescription[]): Promise<ReporterV2[]> {
+  const commandHash = computeCommandHash(config, filterOptions);
   const defaultReporters: { [key in BuiltInReporter]: new(arg: any) => ReporterV2 } = {
     blob: BlobReporter,
     dot: mode === 'list' ? ListModeReporter : DotReporter,
@@ -52,10 +54,14 @@ export async function createReporters(config: FullConfigInternal, mode: 'list' |
   descriptions ??= config.config.reporter;
   if (config.configCLIOverrides.additionalReporters)
     descriptions = [...descriptions, ...config.configCLIOverrides.additionalReporters];
-  const runOptions = reporterOptions(config, mode);
+  const commonOptions: CommonReporterOptions = {
+    configDir: config.configDir,
+    _mode: mode,
+    _commandHash: commandHash,
+  };
   for (const r of descriptions) {
     const [name, arg] = r;
-    const options = { ...runOptions, ...arg };
+    const options = { ...commonOptions, ...arg };
     if (name in defaultReporters) {
       reporters.push(new defaultReporters[name as keyof typeof defaultReporters](options));
     } else {
@@ -65,7 +71,7 @@ export async function createReporters(config: FullConfigInternal, mode: 'list' |
   }
   if (process.env.PW_TEST_REPORTER) {
     const reporterConstructor = await loadReporter(config, process.env.PW_TEST_REPORTER);
-    reporters.push(wrapReporterAsV2(new reporterConstructor(runOptions)));
+    reporters.push(wrapReporterAsV2(new reporterConstructor(commonOptions)));
   }
 
   const someReporterPrintsToStdio = reporters.some(r => r.printsToStdio ? r.printsToStdio() : true);
@@ -103,34 +109,26 @@ export function createErrorCollectingReporter(screen: Screen): ErrorCollectingRe
   };
 }
 
-function reporterOptions(config: FullConfigInternal, mode: 'list' | 'test' | 'merge'): CommonReporterOptions {
-  return {
-    configDir: config.configDir,
-    _mode: mode,
-    _commandHash: computeCommandHash(config),
-  };
-}
-
-function computeCommandHash(config: FullConfigInternal) {
+function computeCommandHash(config: FullConfigInternal, options: FilterOptions): string {
   const parts = [];
   // Include project names for readability.
-  if (config.cliProjectFilter)
-    parts.push(...config.cliProjectFilter);
+  if (options.projectFilter)
+    parts.push(...options.projectFilter);
   const command = {} as any;
-  if (config.cliArgs.length)
-    command.cliArgs = config.cliArgs;
-  if (config.cliGrep)
-    command.cliGrep = config.cliGrep;
-  if (config.cliGrepInvert)
-    command.cliGrepInvert = config.cliGrepInvert;
-  if (config.cliOnlyChanged)
-    command.cliOnlyChanged = config.cliOnlyChanged;
+  if (options.locations?.length)
+    command.locations = options.locations;
+  if (options.grep)
+    command.grep = options.grep;
+  if (options.grepInvert)
+    command.grepInvert = options.grepInvert;
+  if (options.onlyChanged)
+    command.onlyChanged = options.onlyChanged;
   if (config.config.tags.length)
     command.tags = config.config.tags.join(' ');
-  if (config.cliTestList)
-    command.cliTestList = calculateSha1(fs.readFileSync(config.cliTestList));
-  if (config.cliTestListInvert)
-    command.cliTestListInvert = calculateSha1(fs.readFileSync(config.cliTestListInvert));
+  if (options.testList)
+    command.testList = calculateSha1(fs.readFileSync(options.testList));
+  if (options.testListInvert)
+    command.testListInvert = calculateSha1(fs.readFileSync(options.testListInvert));
   if (Object.keys(command).length)
     parts.push(calculateSha1(JSON.stringify(command)).substring(0, 7));
   return parts.join('-');

@@ -17,19 +17,17 @@
 import path from 'path';
 import fs from 'fs';
 
-import sourceMapSupport from 'source-map-support';
 import { toPosixPath } from '@utils/fileUtils';
 
 import { InProcessLoaderHost, OutOfProcessLoaderHost } from './loaderHost';
 import { createTitleMatcher, errorWithFile, parseLocationArg } from '../util';
-import { buildProjectsClosure, collectFilesForProject, filterProjects } from './projectUtils';
+import { buildProjectsClosure, collectFilesForProject } from './projectUtils';
 import {  createTestGroups, filterForShard } from './testGroups';
 import { applyRepeatEachIndex, bindFileSuiteToProject, filterOnly, filterTestsRemoveEmptySuites } from '../common/suiteUtils';
 import { Suite } from '../common/test';
 import { dependenciesForTestFile } from '../transform/compilationCache';
 import { requireOrImport } from '../transform/transform';
 
-import type { RawSourceMap } from 'playwright-core/lib/utilsBundle';
 import type { TestRun } from './tasks';
 import type { TestGroup } from './testGroups';
 import type { FullConfig, Reporter, TestError } from '../../types/testReporter';
@@ -40,13 +38,11 @@ import type { Matcher, TestCaseFilter } from '../util';
 
 
 export async function collectProjectsAndTestFiles(testRun: TestRun, doNotRunTestsOutsideProjectFilter: boolean) {
-  const config = testRun.config;
   const fsCache = new Map();
-  const sourceMapCache = new Map();
 
   // First collect all files for the projects in the command line, don't apply any file filters.
   const allFilesForProject = new Map<FullProjectInternal, string[]>();
-  const filteredProjects = filterProjects(config.projects, config.cliProjectFilter);
+  const filteredProjects = testRun.filter.filteredProjects;
   for (const project of filteredProjects) {
     const files = await collectFilesForProject(project, fsCache);
     allFilesForProject.set(project, files);
@@ -54,21 +50,8 @@ export async function collectProjectsAndTestFiles(testRun: TestRun, doNotRunTest
 
   // Filter files based on the file filters, eliminate the empty projects.
   const filesToRunByProject = new Map<FullProjectInternal, string[]>();
-  for (const [project, files] of allFilesForProject) {
-    const matchedFiles = files.filter(file => {
-      if (!config.loadFileFilters.length) {
-        // Avoid loading source maps.
-        return true;
-      }
-      const hasMatchingSources = sourceMapSources(file, sourceMapCache).some(source => {
-        const matchesAllFileFilters = config.loadFileFilters.every(filter => filter(source));
-        return matchesAllFileFilters;
-      });
-      return hasMatchingSources;
-    });
-    const filteredFiles = matchedFiles.filter(Boolean) as string[];
-    filesToRunByProject.set(project, filteredFiles);
-  }
+  for (const [project, files] of allFilesForProject)
+    filesToRunByProject.set(project, testRun.filter.filterFiles(files));
 
   // (Re-)add all files for dependent projects, disregard filters.
   const projectClosure = buildProjectsClosure([...filesToRunByProject.keys()]);
@@ -138,7 +121,7 @@ export async function createRootSuite(testRun: TestRun, errors: TestError[], sho
       const projectSuite = createProjectSuite(project, fileSuites);
       projectSuites.set(project, projectSuite);
 
-      const filteredProjectSuite = filterProjectSuite(projectSuite, config.preOnlyTestFilters);
+      const filteredProjectSuite = testRun.filter.filterProjectSuiteBeforeOnly(projectSuite);
       filteredProjectSuites.set(project, filteredProjectSuite);
     }
   }
@@ -196,8 +179,7 @@ export async function createRootSuite(testRun: TestRun, errors: TestError[], sho
     filterTestsRemoveEmptySuites(rootSuite, test => testsInThisShard.has(test));
   }
 
-  if (config.postShardTestFilters.length)
-    filterTestsRemoveEmptySuites(rootSuite, test => config.postShardTestFilters.every(filter => filter(test)));
+  testRun.filter.filterRootSuitePostShard(rootSuite);
 
   const topLevelProjects = [];
   // Now prepend dependency projects without filtration.
@@ -232,16 +214,6 @@ function createProjectSuite(project: FullProjectInternal, fileSuites: Suite[]): 
     return grepMatcher(grepTitle);
   });
   return projectSuite;
-}
-
-function filterProjectSuite(projectSuite: Suite, testFilters: TestCaseFilter[]): Suite {
-  // Fast path.
-  if (!testFilters.length)
-    return projectSuite;
-
-  const result = projectSuite._deepClone();
-  filterTestsRemoveEmptySuites(result, test => testFilters.every(filter => filter(test)));
-  return result;
 }
 
 function buildProjectSuite(project: FullProjectInternal, projectSuite: Suite): Suite {
@@ -318,24 +290,6 @@ export function loadGlobalHook(config: FullConfigInternal, file: string): Promis
 
 export function loadReporter(config: FullConfigInternal | null, file: string): Promise<new (arg?: any) => Reporter> {
   return requireOrImportDefaultFunction(config ? path.resolve(config.config.rootDir, file) : file, true);
-}
-
-function sourceMapSources(file: string, cache: Map<string, string[]>): string[] {
-  let sources = [file];
-  if (!file.endsWith('.js'))
-    return sources;
-  if (cache.has(file))
-    return cache.get(file)!;
-
-  try {
-    const sourceMap = sourceMapSupport.retrieveSourceMap(file);
-    const sourceMapData: RawSourceMap | undefined = typeof sourceMap?.map === 'string' ? JSON.parse(sourceMap.map) : sourceMap?.map;
-    if (sourceMapData?.sources)
-      sources = sourceMapData.sources.map(source => path.resolve(path.dirname(file), source));
-  } finally {
-    cache.set(file, sources);
-    return sources;
-  }
 }
 
 export async function loadTestList(config: FullConfigInternal, filePath: string): Promise<{ testFilter: TestCaseFilter, fileFilter: Matcher }> {

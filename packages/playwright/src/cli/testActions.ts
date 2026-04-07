@@ -31,25 +31,28 @@ import { createErrorCollectingReporter } from '../runner/reporters';
 
 import type { ConfigCLIOverrides } from '../common/ipc';
 import type { ReporterDescription } from '../../types/test';
+import type { FilterOptions } from '../runner/filter';
 
 export async function runTests(args: string[], opts: { [key: string]: any }) {
   await startProfiling();
   const cliOverrides = overridesFromOptions(opts);
 
   const config = await loadConfigFromFile(opts.config, cliOverrides, opts.deps === false);
-  config.cliArgs = args;
-  config.cliGrep = opts.grep as string | undefined;
-  config.cliOnlyChanged = opts.onlyChanged === true ? 'HEAD' : opts.onlyChanged;
-  config.cliGrepInvert = opts.grepInvert as string | undefined;
   config.cliListOnly = !!opts.list;
-  config.cliProjectFilter = opts.project || undefined;
-  config.cliPassWithNoTests = !!opts.passWithNoTests;
-  config.cliLastFailed = !!opts.lastFailed;
-  config.cliTestList = opts.testList ? path.resolve(process.cwd(), opts.testList) : undefined;
-  config.cliTestListInvert = opts.testListInvert ? path.resolve(process.cwd(), opts.testListInvert) : undefined;
+  const filterOptions: FilterOptions = {
+    locations: args,
+    grep: opts.grep,
+    grepInvert: opts.grepInvert,
+    onlyChanged: opts.onlyChanged === true ? 'HEAD' : (opts.onlyChanged || undefined),
+    projectFilter: opts.project || undefined,
+    passWithNoTests: !!opts.passWithNoTests,
+    lastFailed: !!opts.lastFailed,
+    testList: opts.testList ? path.resolve(process.cwd(), opts.testList) : undefined,
+    testListInvert: opts.testListInvert ? path.resolve(process.cwd(), opts.testListInvert) : undefined,
+  };
 
   // Evaluate project filters against config before starting execution. This enables a consistent error message across run modes
-  filterProjects(config.projects, config.cliProjectFilter);
+  filterProjects(config.projects, filterOptions.projectFilter);
 
   if (opts.ui || opts.uiHost || opts.uiPort) {
     if (opts.onlyChanged)
@@ -88,7 +91,7 @@ export async function runTests(args: string[], opts: { [key: string]: any }) {
     return;
   }
 
-  const status = await runAllTestsWithConfig(config);
+  const status = await runAllTestsWithConfig(config, filterOptions);
   await stopProfiling('runner');
   const exitCode = status === 'interrupted' ? 130 : (status === 'passed' ? 0 : 1);
   gracefullyProcessExitDoNotHang(exitCode);
