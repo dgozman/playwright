@@ -77,6 +77,7 @@ const classNameMap = new Map(documentation.classesArray.map(x => [x.name, `I${to
 // map some types that we know of
 classNameMap.set('Error', 'Exception');
 classNameMap.set('TimeoutError', 'TimeoutException');
+classNameMap.set('TargetClosedError', 'TargetClosedException');
 classNameMap.set('EvaluationArgument', 'object');
 classNameMap.set('boolean', 'bool');
 classNameMap.set('any', 'object');

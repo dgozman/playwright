@@ -206,6 +206,16 @@ it('close() should abort waitForEvent', async ({ browser }) => {
   expect(error.message).toContain(kTargetClosedErrorMessage);
 });
 
+it('close() should throw TargetClosedError', async ({ browser, playwright }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const promise = page.evaluate(() => new Promise(() => {})).catch((e: Error) => e);
+  await context.close();
+  const error = await promise as Error;
+  expect(error).toBeInstanceOf(playwright.errors.TargetClosedError);
+  expect(error.name).toBe('TargetClosedError');
+});
+
 it('close() should be callable twice', async ({ browser }) => {
   const context = await browser.newContext();
   await context.close();

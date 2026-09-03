@@ -18779,6 +18779,36 @@ export namespace errors {
 class TimeoutError extends Error {
 }
 
+/**
+ * - extends: [Error]
+ *
+ * TargetClosedError is thrown whenever an operation cannot be completed because the page, browser context or browser
+ * it operates on has been closed, e.g.
+ * [locator.click([options])](https://playwright.dev/docs/api/class-locator#locator-click) on a page that is already
+ * closed.
+ *
+ * ```js
+ * const playwright = require('playwright');
+ *
+ * (async () => {
+ *   const browser = await playwright.chromium.launch();
+ *   const context = await browser.newContext();
+ *   const page = await context.newPage();
+ *   await page.close();
+ *   try {
+ *     await page.locator('text=Foo').click();
+ *   } catch (error) {
+ *     if (error instanceof playwright.errors.TargetClosedError)
+ *       console.log('Target closed!');
+ *   }
+ *   await browser.close();
+ * })();
+ * ```
+ *
+ */
+class TargetClosedError extends Error {
+}
+
 }
 
 export const devices: Devices;

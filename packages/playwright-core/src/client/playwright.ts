@@ -19,7 +19,7 @@ import { Browser } from './browser';
 import { BrowserType } from './browserType';
 import { ChannelOwner } from './channelOwner';
 import { Electron } from './electron';
-import { TimeoutError } from './errors';
+import { TargetClosedError, TimeoutError } from './errors';
 import { APIRequest } from './fetch';
 import { Selectors } from './selectors';
 
@@ -35,7 +35,7 @@ export class Playwright extends ChannelOwner<channels.PlaywrightChannel> {
   readonly devices: any;
   selectors: Selectors;
   readonly request: APIRequest;
-  readonly errors: { TimeoutError: typeof TimeoutError };
+  readonly errors: { TimeoutError: typeof TimeoutError, TargetClosedError: typeof TargetClosedError };
 
   // Instrumentation.
   _defaultLaunchOptions?: LaunchOptions;
@@ -57,7 +57,7 @@ export class Playwright extends ChannelOwner<channels.PlaywrightChannel> {
     this._electron._playwright = this;
     this.devices = this._connection.localUtils()?.devices ?? {};
     this.selectors = new Selectors();
-    this.errors = { TimeoutError };
+    this.errors = { TimeoutError, TargetClosedError };
   }
 
   static from(channel: channels.PlaywrightChannel): Playwright {

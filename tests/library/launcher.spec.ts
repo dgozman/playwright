@@ -20,6 +20,7 @@ import { playwrightTest as it, expect } from '../config/browserTest';
 
 it('should have an errors object', async ({ playwright }) => {
   expect(String(playwright.errors.TimeoutError)).toContain('TimeoutError');
+  expect(String(playwright.errors.TargetClosedError)).toContain('TargetClosedError');
 });
 
 it('should have a devices object', async ({ playwright }) => {

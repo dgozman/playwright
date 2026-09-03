@@ -181,6 +181,7 @@ class PlaywrightExample
 * langs: js
 - type: <[Object]>
   - `TimeoutError` <[function]> A class of [TimeoutError].
+  - `TargetClosedError` <[function]> A class of [TargetClosedError].
 
 Playwright methods might throw errors if they are unable to fulfill a request. For example,
 [`method: Locator.waitFor`] might fail if the selector doesn't match any nodes during the given timeframe.

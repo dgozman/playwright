@@ -272,6 +272,8 @@ export namespace errors {
 
 class TimeoutError extends Error {}
 
+class TargetClosedError extends Error {}
+
 }
 
 export const devices: Devices;

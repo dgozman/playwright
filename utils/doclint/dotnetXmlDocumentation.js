@@ -130,6 +130,7 @@ function _wrapAndEscape(node, maxColumns = 0) {
   text = text.replace(/(?<!`)\[(.*?)\]/g, (match, link) => `<see cref="${link}"/>`);
   text = text.replace(/`([^`]*)`/g, (match, code) => `<c>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</c>`);
   text = text.replace(/ITimeoutError/, 'TimeoutException');
+  text = text.replace(/ITargetClosedError/, 'TargetClosedException');
   text = text.replace(/Promise/, 'Task');
 
   const words = text.split(' ');
